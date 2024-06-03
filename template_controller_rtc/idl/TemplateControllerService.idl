@@ -1,9 +1,0 @@
-#include "BasicDataType.idl"
-
-module OpenHRP
-{
-  interface TemplateControllerService
-  {
-    boolean templateParam(in double data);
-  };
-};

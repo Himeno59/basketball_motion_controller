@@ -1,13 +1,13 @@
 #include <rtm/Manager.h>
-#include "TemplateController.h"
+#include "BasketballMotionController.h"
 
 void MyModuleInit(RTC::Manager* manager)
 {
-  TemplateControllerInit(manager);
+  BasketballMotionControllerInit(manager);
   RTC::RtcBase* comp;
 
   // Create a component
-  comp = manager->createComponent("TemplateController"); // skip root name space for OpenRTM instance name
+  comp = manager->createComponent("BasketballMotionController"); // skip root name space for OpenRTM instance name
 
   return;
 

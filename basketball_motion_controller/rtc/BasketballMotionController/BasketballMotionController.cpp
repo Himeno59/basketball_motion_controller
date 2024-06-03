@@ -1,6 +1,6 @@
-#include "TemplateController.h"
+#include "BasketballMotionController.h"
 
-TemplateController::TemplateController(RTC::Manager* manager):
+BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   RTC::DataFlowComponentBase(manager),
   m_qRefIn_("qRefIn", m_qRef_),
   m_tauRefIn_("tauRefIn", m_tauRef_),
@@ -9,12 +9,12 @@ TemplateController::TemplateController(RTC::Manager* manager):
   m_tauActIn_("tauActIn", m_tauAct_),
   m_qOut_("q", m_q_),
   m_tauOut_("tauOut", m_tau_),
-  m_templateControllerServicePort_("TemplateControllerService")
+  m_basketballmotionControllerServicePort_("BasketballMotionControllerService")
 {
   this->m_service0_.setComp(this);
 }
 
-RTC::ReturnCode_t TemplateController::onInitialize(){
+RTC::ReturnCode_t BasketballMotionController::onInitialize(){
   addInPort("qRefIn", this->m_qRefIn_);
   addInPort("tauRefIn", this->m_tauRefIn_);
   addInPort("qActIn", this->m_qActIn_);
@@ -22,14 +22,14 @@ RTC::ReturnCode_t TemplateController::onInitialize(){
   addInPort("tauActIn", this->m_tauActIn_);
   addOutPort("q", this->m_qOut_);
   addOutPort("tauOut", this->m_tauOut_);
-  this->m_templateControllerServicePort_.registerProvider("service0", "TemplateControllerService", this->m_service0_);
-  addPort(this->m_templateControllerServicePort_);
+  this->m_basketballmotionControllerServicePort_.registerProvider("service0", "BasketballMotionControllerService", this->m_service0_);
+  addPort(this->m_basketballmotionControllerServicePort_);
 
   return RTC::RTC_OK;
 }
 
-RTC::ReturnCode_t TemplateController::onExecute(RTC::UniqueId ec_id){
-  std::cerr << "TemplateController rtc onExecute" << std::endl;
+RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
+  std::cerr << "BasketballMotionController rtc onExecute" << std::endl;
 
   if (this->m_qRefIn_.isNew()){
     this->m_qRefIn_.read();
@@ -72,15 +72,15 @@ RTC::ReturnCode_t TemplateController::onExecute(RTC::UniqueId ec_id){
   return RTC::RTC_OK;
 }
 
-bool TemplateController::templateParam(const double data){
+bool BasketballMotionController::basketballmotionParam(const double data){
 }
 
-static const char* TemplateController_spec[] = {
-  "implementation_id", "TemplateController",
-  "type_name",         "TemplateController",
-  "description",       "TemplateController component",
+static const char* BasketballMotionController_spec[] = {
+  "implementation_id", "BasketballMotionController",
+  "type_name",         "BasketballMotionController",
+  "description",       "BasketballMotionController component",
   "version",           "0.0",
-  "vendor",            "Takuma-Hiraoka",
+  "vendor",            "Tomoya-Himeno",
   "category",          "example",
   "activity_type",     "DataFlowComponent",
   "max_instance",      "10",
@@ -91,8 +91,8 @@ static const char* TemplateController_spec[] = {
 
 
 extern "C"{
-  void TemplateControllerInit(RTC::Manager* manager) {
-    RTC::Properties profile(TemplateController_spec);
-    manager->registerFactory(profile, RTC::Create<TemplateController>, RTC::Delete<TemplateController>);
+  void BasketballMotionControllerInit(RTC::Manager* manager) {
+    RTC::Properties profile(BasketballMotionController_spec);
+    manager->registerFactory(profile, RTC::Create<BasketballMotionController>, RTC::Delete<BasketballMotionController>);
   }
 };

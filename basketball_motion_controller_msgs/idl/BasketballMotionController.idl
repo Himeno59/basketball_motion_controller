@@ -1,0 +1,12 @@
+#ifndef BasketballMotionController_idl
+#define BasketballMotionController_idl
+
+module basketball_motion_controller_msgs
+{
+  struct TemplateDataIdl
+  {
+    double data;
+  };
+};
+
+#endif

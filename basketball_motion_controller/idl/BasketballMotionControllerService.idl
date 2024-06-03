@@ -1,0 +1,9 @@
+#include "BasicDataType.idl"
+
+module OpenHRP
+{
+  interface BasketballMotionControllerService
+  {
+    boolean basketballmotionParam(in double data);
+  };
+};
