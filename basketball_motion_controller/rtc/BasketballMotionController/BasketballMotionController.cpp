@@ -3,8 +3,6 @@
 BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   RTC::DataFlowComponentBase(manager),
   m_objRefIn_("objRefIn", m_objRef_),
-  m_rarm_eePoseOut_("rarm_eePoseOut", m_rarm_eePose_),
-  // m_eePoseIn_("EEPoseOut", m_eePose_),
   
   // m_qRefIn_("qRefIn", m_qRef_),
   // m_tauRefIn_("tauRefIn", m_tauRef_),
@@ -16,11 +14,27 @@ BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   m_basketballmotionControllerServicePort_("BasketballMotionControllerService")
 {
   this->m_service0_.setComp(this);
+
+  loop = 0;
+  dt = 0.002; // [sec]
+  exec_tm = 0.0; // [sec]
+  motion_time = 1.0; // [sec]
+  pos_range = {{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}}; // x,y,z : high,low [m]
+  pos_range = {{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}}; // r,p,y : high.low [rad]
 }
 
 RTC::ReturnCode_t BasketballMotionController::onInitialize(){
   addInPort("objRefIn", this->m_objRefIn_);
-  addOutPort("rarm_eePoseOut", this->m_rarm_eePoseOut_);
+
+  // 各EndEffectorにつき、<name>PoseOutというOutPortをつくる  
+  const std::vector<std::string> eeNames = {"rleg", "lleg", "rarm", "larm"};
+  m_eePoseOut_.resize(eeNames.size());
+  m_eePose_.resize(eeNames.size());
+  for(size_t i=0;i<eeNames.size();i++){
+    std::string portName = eeNames[i] + "PoseOut";
+    m_eePoseOut_[i] = std::make_unique<RTC::OutPort<RTC::TimedPose3D> >(portName.c_str(), m_eePose_[i]);
+    addOutPort(portName.c_str(), *(m_eePoseOut_[i]));
+  }
   
   // addInPort("qRefIn", this->m_qRefIn_);
   // addInPort("tauRefIn", this->m_tauRefIn_);
@@ -77,73 +91,68 @@ RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
   // }
 
   // readInPortData
-  if (this->m_objRefIn_.isNew()){
-    this->m_objRefIn_.read();
+  if (m_objRefIn_.isNew()){
+    m_objRefIn_.read();
   }
 
   // generate targetEEPose
-  this->genTargetEEPose();
+  genTargetEEPose();
 
   // writeOutPortData
   {
-    this->m_rarm_eePoseOut_.write();
+    for(int i=0;i<4;i++){
+      m_eePoseOut_[i]->write();
+    }
   }
 
   return RTC::RTC_OK;
 }
 
-// void BasketballMotionController::genTargetEEPose() const {
-//   RTC::TimedPose3DSeq targetEEPose; // 0:rleg, 1:lleg, 2:rarm, 3:larm
-//   // rarm
-//   // point
-//   targetEEPose[2].position.x = 0.0;
-//   targetEEPose[2].position.y = 0.0;
-//   targetEEPose[2].position.z = 0.0;
-//   // orientation
-//   targetEEPose[2].orientation.r = 0.0;
-//   targetEEPose[2].orientation.p = 0.0;
-//   targetEEPose[2].orientation.y = 0.0;
-  
-//   // RTC::TimedPose3D rarm_targetEEPose;
-//   // RTC::TimedPose3D larm_targetEEPose;
-//   // RTC::TimedPose3D rleg_targetEEPose;
-//   // RTC::TimedPose3D lleg_targetEEPose;  
-//   // // point
-//   // ratm_targetEEPose.position.x = 0.0;
-//   // ratm_targetEEPose.position.y = 0.0;
-//   // ratm_targetEEPose.position.z = 0.0;
-  
-//   // // orientation
-//   // ratm_targetEEPose.orientation.r = 0.0;
-//   // ratm_targetEEPose.orientation.p = 0.0;
-//   // ratm_targetEEPose.orientation.y = 0.0;
-      
-//   for(int i=0;i<4;i++){
-//     // 両手を与えるようにするとして、脚はどうする?
-//     m_eePose_[i] = targetEEPose[i];
-//   }
-// }
-
 void BasketballMotionController::genTargetEEPose() {
-  RTC::TimedPose3D targetEEPose;
-  // point
-  targetEEPose.data.position.x = 0.0;
-  targetEEPose.data.position.y = 0.0;
-  targetEEPose.data.position.z = 0.0;
-  // orientation
-  targetEEPose.data.orientation.r = 0.0;
-  targetEEPose.data.orientation.p = 0.0;
-  targetEEPose.data.orientation.y = 0.0;
-
-  m_rarm_eePose_ = targetEEPose;
-
-  std::cout << "[targetEEPose]" << std::endl;
-  std::cout << "position.x: " << m_rarm_eePose_.data.position.x << std::endl;
-  std::cout << "position.y: " << m_rarm_eePose_.data.position.y << std::endl;
-  std::cout << "porision.z: " << m_rarm_eePose_.data.position.z << std::endl;
-  std::cout << "orientation.r: " << m_rarm_eePose_.data.orientation.r << std::endl;
-  std::cout << "orientation.p: " << m_rarm_eePose_.data.orientation.p << std::endl;
-  std::cout << "orientation.y: " << m_rarm_eePose_.data.orientation.y << std::endl;
+  for(int i=0;i<4;i++){
+    RTC::TimedPose3D targetEEPose;
+    if(i=2){
+      // 右手
+      // position
+      targetEEPose.data.position.x = 0.0;
+      targetEEPose.data.position.y = 0.0;
+      targetEEPose.data.position.z = 0.0;
+      // orientation
+      targetEEPose.data.orientation.r = 0.0;
+      targetEEPose.data.orientation.p = 0.0;
+      targetEEPose.data.orientation.y = 0.0;
+    } else if(i=3) {
+      // 左手
+      // position
+      targetEEPose.data.position.x = 0.0;
+      targetEEPose.data.position.y = 0.0;
+      targetEEPose.data.position.z = 0.0;
+      // orientation
+      targetEEPose.data.orientation.r = 0.0;
+      targetEEPose.data.orientation.p = 0.0;
+      targetEEPose.data.orientation.y = 0.0;
+    } else {
+      // 脚は全て0を送る
+      // position
+      targetEEPose.data.position.x = 0.0;
+      targetEEPose.data.position.y = 0.0;
+      targetEEPose.data.position.z = 0.0;
+      // orientation
+      targetEEPose.data.orientation.r = 0.0;
+      targetEEPose.data.orientation.p = 0.0;
+      targetEEPose.data.orientation.y = 0.0;
+    }
+          
+    m_eePose_[i] = targetEEPose;
+  }
+  
+  // std::cout << "[targetEEPose]" << std::endl;
+  // std::cout << "position.x: " << m_eePose_[2].data.position.x << std::endl;
+  // std::cout << "position.y: " << m_eePose_[2].data.position.y << std::endl;
+  // std::cout << "porision.z: " << m_eePose_[2].data.position.z << std::endl;
+  // std::cout << "orientation.r: " << m_eePose_[2].data.orientation.r << std::endl;
+  // std::cout << "orientation.p: " << m_eePose_[2].data.orientation.p << std::endl;
+  // std::cout << "orientation.y: " << m_eePose_[2].data.orientation.y << std::endl;
   
 }
 

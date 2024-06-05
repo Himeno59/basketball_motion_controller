@@ -1,6 +1,8 @@
 #ifndef BasketballMotionController_H
 #define BasketballMotionController_H
 
+#include <memory>
+
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/DataOutPort.h>
@@ -17,7 +19,7 @@
 
 class BasketballMotionController : public RTC::DataFlowComponentBase{
 protected:
-
+    
   // inport
   // ボールの予測軌道、速度
   RTC::TimedDoubleSeq m_objRef_;
@@ -37,11 +39,8 @@ protected:
   // outport
   // refEEPose
   // 時系列のデータにする必要はある？
-  // todo: これだと一つだけしか送れないので、TimedPose3DSeqという型を作成する
-  RTC::TimedPose3D m_rarm_eePose_;
-  RTC::OutPort<RTC::TimedPose3D> m_rarm_eePoseOut_;
-  /* RTC::TimedPose3DSeq m_eePose_; */
-  /* RTC::OutPort<RTC::TimedPose3DSeq> m_eePoseOut_; */
+  std::vector<RTC::TimedPose3D> m_eePose_;
+  std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedPose3D> > > m_eePoseOut_;
   
   /* RTC::TimedDoubleSeq m_q_; */
   /* RTC::OutPort<RTC::TimedDoubleSeq> m_qOut_; */
@@ -63,6 +62,14 @@ public:
   bool basketballmotionParam(const double data);
 
 private:
+  int loop; // ドリブルのカウント
+  double dt;
+  double exec_tm;
+
+  double motion_time;
+  std::vector<std::vector<double>> pos_range;
+  std::vector<std::vector<double>> rpy_range;
+  
 };
 
 extern "C"
