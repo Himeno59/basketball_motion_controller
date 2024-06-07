@@ -2,6 +2,8 @@
 #define BasketballMotionController_H
 
 #include <memory>
+#include <cmath>
+#include <random>
 
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
@@ -12,10 +14,18 @@
 #include <rtm/idl/ExtendedDataTypes.hh>
 #include <rtm/idl/BasicDataTypeSkel.h>
 #include <rtm/idl/ExtendedDataTypesSkel.h>
+#include <cnoid/EigenUtil>
 
 #include <basketball_motion_controller_msgs/idl/BasketballMotionController.hh>
+#include <auto_stabilizer/idl/AutoStabilizerService.hh>
 
 #include "BasketballMotionControllerService_impl.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#define deg2rad(x) ((x) * M_PI / 180.0)
 
 class BasketballMotionController : public RTC::DataFlowComponentBase{
 protected:
@@ -49,27 +59,81 @@ protected:
   /* RTC::TimedDoubleSeq m_ */
 
   BasketballMotionControllerService_impl m_service0_;
-  RTC::CorbaPort m_basketballmotionControllerServicePort_;
+  RTC::CorbaPort m_BasketballMotionControllerServicePort_;
+  
+  RTC::CorbaConsumer<OpenHRP::AutoStabilizerService> m_autoStabilizerService0_;
+  RTC::CorbaPort m_AutoStabilizerServicePort_;
 
 protected:
+  // utility functions
+  // void readInPortData();
+  void writeOutPortData();
+  void updateParam();
   void genTargetEEPose();
+  void ffTargetEEPose();
+  void fbTargetEEPose();
+
+  void initPose();
+  void resetParam();
+  void dummyObjPos();
   
 public:
   BasketballMotionController(RTC::Manager* manager);
   virtual RTC::ReturnCode_t onInitialize();
+  // virtual RTC::ReturnCode_t onFinalize();
   virtual RTC::ReturnCode_t onExecute(RTC::UniqueId ec_id);
 
-  bool basketballmotionParam(const double data);
+  // srv
+  bool startDribbleMode();
+  bool stopDribbleMode();
+  bool startDribbleMotion();
+  bool stopDribbleMotion();
+
+  bool BasketballMotionControllerParam(const double data);
 
 private:
-  int loop; // ドリブルのカウント
+
   double dt;
   double exec_tm;
 
-  double motion_time;
-  std::vector<std::vector<double>> pos_range;
-  std::vector<std::vector<double>> rpy_range;
+  double epsilon;
   
+  double motion_time; // ff_motion_time or fb_motion_time
+  double ff_motion_time;
+  double fb_motion_time;
+  
+  int loop; // ドリブルのサイクルの切れ目をどうするか
+  int max_count; // 1サイクルの中でdt何個分か
+  int count; // dt何個目か
+
+  // ドリブルの状態を区切る
+  // 0:動作前, 1:振り下ろし, 2:fb
+  int motion_state; 
+
+  // 0:rarm, 1:larm
+  std::vector<RTC::TimedPose3D> targetEEPose;
+  // std::vector<cnoid::Position> targetEEPose; // cnoid::Positionで扱ったほうが良かったりする??
+  std::vector<std::vector<double>> rarm_pos_range;
+  std::vector<std::vector<double>> larm_pos_range;
+  std::vector<std::vector<double>> rarm_rpy_range;
+  std::vector<std::vector<double>> larm_rpy_range;
+
+  std::vector<double> startBallPos;  // (最高到達点に達した)今のボールの位置
+  std::vector<double> goalBallPos;   // バウンドした後のボールの最高到達位置
+  std::vector<double> bound_point;   // 地面への衝突位置(z=0)
+  std::vector<double> d;             // bound_point計算用
+  std::vector<double> dummyBallPos;  // test
+  
+  bool startDribbleMode_flag;
+  bool startDribbleMotion_flag;
+  
+  bool motionEnd_flag;
+  bool last_motion;
+  bool stateChange_flag;
+
+  std::mt19937_64 mt64;
+  std::uniform_real_distribution<double> random;
+
 };
 
 extern "C"

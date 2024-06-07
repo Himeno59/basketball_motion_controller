@@ -21,6 +21,7 @@ rtmbuild_add_library(BasketballMotionController SHARED
 target_link_libraries(BasketballMotionController
   ${catkin_LIBRARIES}
   ${CHOREONOID_LIBRARY_DIRS}
+  AutoStabilizerServiceSkel AutoStabilizerServiceStub
   )
 set_target_properties(BasketballMotionController PROPERTIES PREFIX "") # libBasketballMotionController.so -> BasketballMotionController.so                                                                           
 add_dependencies(BasketballMotionController RTMBUILD_${PROJECT_NAME}_genrpc) # wait for rtmbuild_genidl                                                                                                        

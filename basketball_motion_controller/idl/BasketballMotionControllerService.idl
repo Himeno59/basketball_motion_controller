@@ -4,6 +4,10 @@ module OpenHRP
 {
   interface BasketballMotionControllerService
   {
-    boolean basketballmotionParam(in double data);
+    boolean BasketballMotionControllerParam(in double data);
+    boolean startDribbleMode();
+    boolean stopDribbleMode();
+    boolean startDribbleMotion();
+    boolean stopDribbleMotion();
   };
 };
