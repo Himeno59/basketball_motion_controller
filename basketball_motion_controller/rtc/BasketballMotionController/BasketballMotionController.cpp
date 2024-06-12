@@ -7,14 +7,6 @@ BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   RTC::DataFlowComponentBase(manager),
   m_objRefIn_("objRefIn", m_objRef_),
   
-  // m_qRefIn_("qRefIn", m_qRef_),
-  // m_tauRefIn_("tauRefIn", m_tauRef_),
-  // m_qActIn_("qActIn", m_qAct_),
-  // m_dqActIn_("dqActIn", m_dqAct_),
-  // m_tauActIn_("tauActIn", m_tauAct_),
-  // m_qOut_("q", m_q_),
-  // m_tauOut_("tauOut", m_tau_),
-  
   m_BasketballMotionControllerServicePort_("BasketballMotionControllerService"),
   m_AutoStabilizerServicePort_("AutoStabilizerService"),
 
@@ -24,47 +16,51 @@ BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   this->m_service0_.setComp(this);
 
   motion_state = 0; // 0:停止時, 1:ff, 2:fb
-
-  // [sec]
-  dt = 0.002; 
+  
   exec_tm = 0.0;
-
   epsilon = 1e-6;
 
   // state管理の都合上、dtの整数倍にしておく
-  ff_motion_time = 0.35;
-  fb_motion_time = 0.60; // 本当はfbの値から決める
+  ff_motion_time = 0.30;
+  fb_motion_time = 0.45; // 本当はfbの結果から
   motion_time = ff_motion_time;
 
-  // loop = 0;
-  // max_count = static_cast<int>(motion_time/dt);
-  // count = 0;
-
+  // ffのmotionのパラメタ
   // x, y, z : start, goal [m]
   // start, goalはドリブルをつく時を想定してある
-  rarm_pos_range = {{0.6, 0.6}, {-0.4, -0.4}, {1.3, 1.1}};
-  larm_pos_range = {{0.4, 0.4}, {0.4, 0.4}, {1.0, 1.0}};
+  rarm_pos_range = {{0.60, 0.62}, {-0.45, -0.45}, {1.3, 1.0}};
+  // rarm_pos_range = {{0.70, 0.72}, {-0.40, -0.40}, {1.3, 1.0}};
+  larm_pos_range = {{0.0, 0.0}, {0.45, 0.45}, {0.68, 0.68}};
   // r, p, y : start, goal [rad]
-  rarm_rpy_range = {{-M_PI/2.0, -M_PI/2.0}, {-M_PI/10.0, M_PI/10.0}, {0.0, 0.0}};
-  larm_rpy_range = {{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}};
+  rarm_rpy_range = {{-M_PI/2.0, -M_PI/2.0}, {-M_PI/8.0, M_PI/8.0}, {0.0, 0.0}};
+  // rarm_rpy_range = {{-M_PI/2.0, -M_PI/2.0}, {-M_PI/20.0, M_PI/20.0}, {0.0, 0.0}};
+  larm_rpy_range = {{0.0, 0.0}, {M_PI/2.5, M_PI/2.5}, {0.0, 0.0}};
 
-  startDribbleMode_flag = false;
-  startDribbleMotion_flag = false;
-
-  motionEnd_flag = false;
-  last_motion = false;
-  stateChange_flag = false;
-
+  // 初期姿勢の位置でとりあえず初期化しておく
+  targetContactBallState = {{rarm_pos_range[0][0], rarm_pos_range[1][0], rarm_pos_range[2][0]},
+			    {0.0, 0.0, 0.0}}
+  
+  // resize
   startBallPos.resize(3);
   goalBallPos.resize(3);
   bound_point.resize(3);
   dummyBallPos.resize(3);
+  
+  
+  // flag
+  motionEnd_flag = false;
+  last_motion = false;
+  stateChange_flag = false;
 
+  startDribbleMode_flag = false;
+  startDribbleMotion_flag = false;
 }
 
 RTC::ReturnCode_t BasketballMotionController::onInitialize(){
+  // InPort
   addInPort("objRefIn", this->m_objRefIn_);
 
+  // OutPort
   // 各EndEffectorにつき、<name>PoseOutというOutPortをつくる  
   const std::vector<std::string> eeNames = {"rleg", "lleg", "rarm", "larm"};
   m_eePoseOut_.resize(eeNames.size());
@@ -75,73 +71,41 @@ RTC::ReturnCode_t BasketballMotionController::onInitialize(){
     addOutPort(portName.c_str(), *(m_eePoseOut_[i]));
   }
 
-  // targetEEPoseをresize
+  // resize
   targetEEPose.resize(eeNames.size());
+  targetContactEEPose.resize(eeNames.size());
   
-  // addInPort("qRefIn", this->m_qRefIn_);
-  // addInPort("tauRefIn", this->m_tauRefIn_);
-  // addInPort("qActIn", this->m_qActIn_);
-  // addInPort("dqActIn", this->m_dqActIn_);
-  // addInPort("tauActIn", this->m_tauActIn_);
-  // addOutPort("q", this->m_qOut_);
-  // addOutPort("tauOut", this->m_tauOut_);
+  // srv
   m_BasketballMotionControllerServicePort_.registerProvider("service0", "BasketballMotionControllerService", m_service0_);
   addPort(m_BasketballMotionControllerServicePort_);
   m_AutoStabilizerServicePort_.registerConsumer("service0", "AutoStabilizerService", m_autoStabilizerService0_);
   addPort(m_AutoStabilizerServicePort_);
+
+  {
+    // load dt
+    std::string buf; getProperty("dt", buf);
+    dt = std::stod(buf); // str->double
+    if(dt <= 0.0){
+      getProperty("exec_cxt.periodic.rate", buf);
+      double rate = std::stod(buf);
+      if(rate > 0.0){
+        dt = 1.0/rate;
+      }else{
+        std::cerr << "\x1b[31m[" << this->m_profile.instance_name << "] " << "dt is invalid" << "\x1b[39m" << std::endl;
+        return RTC::RTC_ERROR;
+      }
+    }
+  }
   
   return RTC::RTC_OK;
 }
 
 RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
-  // std::cerr << "BasketballMotionController rtc onExecute" << std::endl;
-
-  // if (this->m_qRefIn_.isNew()){
-  //   this->m_qRefIn_.read();
-  // }
-
-  // if (this->m_tauRefIn_.isNew()){
-  //   this->m_tauRefIn_.read();
-  // }
-
-  // if (this->m_qActIn_.isNew()){
-  //   this->m_qActIn_.read();
-  // }
-
-  // if (this->m_dqActIn_.isNew()){
-  //   this->m_dqActIn_.read();
-  // }
-
-  // if (this->m_tauActIn_.isNew()){
-  //   this->m_tauActIn_.read();
-  // }
-
-  // {
-  //   m_q_.tm = m_qRef_.tm;
-  //   m_q_.data.length(m_qRef_.data.length());
-  //   for (int i = 0 ; i < m_q_.data.length(); i++){
-  //     m_q_.data[i] = m_qRef_.data[i];
-  //   }
-  //   this->m_qOut_.write();
-  // }
-
-  // {
-  //   m_tau_.tm = m_qRef_.tm;
-  //   m_tau_.data.length(m_tauRef_.data.length());
-  //   for (int i = 0 ; i < m_q_.data.length(); i++){
-  //     m_tau_.data[i] = m_tauRef_.data[i];
-  //   }
-  //   this->m_tauOut_.write();
-  // }
-
-  // startDribbleMode srv が呼ばれて、flag=trueになったら実行開始
-  // 少し遅れてstartWholeBodyMasterSlave()を呼び、solveFKModeを切る
+  // startDribbleModeが呼ばれて、flag=trueになったら実行開始
   if (!startDribbleMode_flag) return RTC::RTC_OK;
 
   // readInPortData
-  if (m_objRefIn_.isNew()){
-    m_objRefIn_.read();
-  }
+  readInPortData();
 
   // update param
   if (stateChange_flag) {
@@ -149,19 +113,26 @@ RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
     stateChange_flag = false; // とりあえずテストで切り替わったタイミングに一回paramを更新するのを試す
   }
   
-  // eePoseのセット
+  // eePoseの計算
   if (!startDribbleMotion_flag) {
-    // startDribbleMotion srv が呼ばれて、flag=trueになるまではinitPoseを送り続ける
+    // startDribbleMotionが呼ばれてflag=trueになるまではinitPoseを送り続ける
     initPose();
   } else {
-    // generate targetEEPose
     genTargetEEPose();
   }
   
   // writeOutPortData
   writeOutPortData();
-
+  
   return RTC::RTC_OK;
+}
+
+void BasketballMotionController::readInPortData() {
+  // Objectoの予測軌道
+  // 一旦最高到達点が流れてくると仮定する
+  if (m_objRefIn_.isNew()){
+    m_objRefIn_.read();
+  }
 }
 
 void BasketballMotionController::writeOutPortData() {
@@ -188,21 +159,6 @@ void BasketballMotionController::dummyObjPos() {
 }
 
 void BasketballMotionController::updateParam() {
-  // if (motion_state==1) {
-  //     // fb_mode
-  //     motion_state = 2;
-  //     motion_time = fb_motion_time;
-  //     // test
-  //     dummyObjPos();
-  //     rarm_pos_range[2][0] = dummyBallPos[2];
-  //   } else if (motion_state==2) {
-  //     // ff_mode
-  //     motion_state = 1;
-  //     motion_time = ff_motion_time;
-  //   }
-    
-  // std::cout << "next-motion_state: " << motion_state << std::endl;
-  
   if (motionEnd_flag) {
     // 動作停止モードへ以降
     if (motion_state==1) {
@@ -222,19 +178,26 @@ void BasketballMotionController::updateParam() {
       motion_state = 2;
       motion_time = fb_motion_time;
       // test
-      // dummyObjPos();
-      // rarm_pos_range[2][0] = dummyBallPos[2];
+      dummyObjPos();
+      rarm_pos_range[2][0] = dummyBallPos[2];
     } else if (motion_state==2) {
       // ff_mode
       motion_state = 1;
       motion_time = ff_motion_time;
+      
+      // rangeの設定
+      // startは最高到達点でcontactしたところ
+      // goalはどうする??とりあえず変更なし??
+      rarm_pos_range[0][0] = targetContactEEPose[0];
+      rarm_pos_range[1][0] = targetContactEEPose[1];
+      rarm_pos_range[2][0] = targetContactEEPose[2];
     }
-    
-    std::cout << "next-motion_state: " << motion_state << std::endl;
   }
+  
 }
 
 void BasketballMotionController::genTargetEEPose() {
+  // ffとfbの切り替え
   if (motion_state==1) {
     ffTargetEEPose();
   } else if (motion_state==2) {
@@ -250,7 +213,6 @@ void BasketballMotionController::genTargetEEPose() {
       startDribbleMotion_flag = false;
       motionEnd_flag = false;
       last_motion = false;
-      
     }
   }
 }
@@ -260,10 +222,10 @@ void BasketballMotionController::ffTargetEEPose() {
   // rarm
   // position
   targetEEPose[2].data.position.x
-    = ((rarm_pos_range[0][0] - rarm_pos_range[0][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm)
+    = ((rarm_pos_range[0][0] - rarm_pos_range[0][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
     + ((rarm_pos_range[0][0] + rarm_pos_range[0][1]) / 2.0);; 
   targetEEPose[2].data.position.y
-    = ((rarm_pos_range[1][0] - rarm_pos_range[1][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm)
+    = ((rarm_pos_range[1][0] - rarm_pos_range[1][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
     + ((rarm_pos_range[1][0] + rarm_pos_range[1][1]) / 2.0);
   targetEEPose[2].data.position.z
     = ((rarm_pos_range[2][0] - rarm_pos_range[2][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm)
@@ -291,15 +253,13 @@ void BasketballMotionController::ffTargetEEPose() {
 }
 
 void BasketballMotionController::fbTargetEEPose() {
-  // モデル予測制御??
-  
   // rarm
   // position
   targetEEPose[2].data.position.x
-    = ((rarm_pos_range[0][0] - rarm_pos_range[0][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+    = ((rarm_pos_range[0][0] - rarm_pos_range[0][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
     + ((rarm_pos_range[0][0] + rarm_pos_range[0][1]) / 2.0);; 
   targetEEPose[2].data.position.y
-    = ((rarm_pos_range[1][0] - rarm_pos_range[1][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+    = ((rarm_pos_range[1][0] - rarm_pos_range[1][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
     + ((rarm_pos_range[1][0] + rarm_pos_range[1][1]) / 2.0);
   targetEEPose[2].data.position.z
     = ((rarm_pos_range[2][0] - rarm_pos_range[2][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
@@ -314,6 +274,28 @@ void BasketballMotionController::fbTargetEEPose() {
   targetEEPose[2].data.orientation.y
     = ((rarm_rpy_range[2][0] - rarm_rpy_range[2][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
     + ((rarm_rpy_range[2][0] + rarm_rpy_range[2][1]) / 2.0);;
+  
+  // // rarm
+  // // position
+  // targetEEPose[2].data.position.x
+  //   = ((rarm_pos_range[0][0] - rarm_pos_range[0][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
+  //   + ((rarm_pos_range[0][0] + rarm_pos_range[0][1]) / 2.0);; 
+  // targetEEPose[2].data.position.y
+  //   = ((rarm_pos_range[1][0] - rarm_pos_range[1][1]) / 2.0) * std::cos((2*M_PI/motion_time)*exec_tm)
+  //   + ((rarm_pos_range[1][0] + rarm_pos_range[1][1]) / 2.0);
+  // targetEEPose[2].data.position.z
+  //   = ((rarm_pos_range[2][0] - rarm_pos_range[2][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+  //   + ((rarm_pos_range[2][0] + rarm_pos_range[2][1]) / 2.0);
+  // // orientation
+  // targetEEPose[2].data.orientation.r
+  //   = ((rarm_rpy_range[0][0] - rarm_rpy_range[0][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+  //   + ((rarm_rpy_range[0][0] + rarm_rpy_range[0][1]) / 2.0);;
+  // targetEEPose[2].data.orientation.p
+  //   = ((rarm_rpy_range[1][0] - rarm_rpy_range[1][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+  //   + ((rarm_rpy_range[1][0] + rarm_rpy_range[1][1]) / 2.0);
+  // targetEEPose[2].data.orientation.y
+  //   = ((rarm_rpy_range[2][0] - rarm_rpy_range[2][1]) / 2.0) * std::cos((M_PI/motion_time)*exec_tm + M_PI)
+  //   + ((rarm_rpy_range[2][0] + rarm_rpy_range[2][1]) / 2.0);;
   
   // larm
   targetEEPose[3].data.position.x = larm_pos_range[0][0];
@@ -354,11 +336,20 @@ void BasketballMotionController::resetParam(){
   motion_state = 1;
 }
 
+bool BasketballMotionController::getProperty(const std::string& key, std::string& ret) {
+  if (this->getProperties().hasKey(key.c_str())) {
+    ret = std::string(this->getProperties()[key.c_str()]);
+  } else if (this->m_pManager->getConfig().hasKey(key.c_str())) { // 引数 -o で与えたプロパティを捕捉
+    ret = std::string(this->m_pManager->getConfig()[key.c_str()]);
+  } else {
+    return false;
+  }
+  std::cerr << "[" << this->m_profile.instance_name << "] " << key << ": " << ret <<std::endl;
+  return true;
+}
 
 // srv
 bool BasketballMotionController::startDribbleMode() {
-  m_autoStabilizerService0_->getAutoStabilizerParam();
-  
   startDribbleMode_flag = true;
 
   usleep(2000000); // 1秒以上待たないとmasterslaveが呼ばれない
@@ -379,7 +370,7 @@ bool BasketballMotionController::stopDribbleMode(){
 
 bool BasketballMotionController::startDribbleMotion(){
   if(!startDribbleMode_flag){
-    std::cout << "Pleas Start DribbleMode" << std::endl;
+    std::cout << "Please Start DribbleMode" << std::endl;
     return false;
   } else {
     startDribbleMotion_flag = true;

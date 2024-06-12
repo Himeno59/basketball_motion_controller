@@ -4,6 +4,7 @@
 #include <memory>
 #include <cmath>
 #include <random>
+#include <chrono>
 
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
@@ -66,7 +67,7 @@ protected:
 
 protected:
   // utility functions
-  // void readInPortData();
+  void readInPortData();
   void writeOutPortData();
   void updateParam();
   void genTargetEEPose();
@@ -76,6 +77,7 @@ protected:
   void initPose();
   void resetParam();
   void dummyObjPos();
+  bool getProperty(const std::string& key, std::string& ret); // dtをconfファイルからloadする用
   
 public:
   BasketballMotionController(RTC::Manager* manager);
@@ -92,32 +94,36 @@ public:
   bool BasketballMotionControllerParam(const double data);
 
 private:
+  // 時間の管理
+  double dt;      // 0.0020 <- confファイルからloadしてくる
+  double exec_tm; // motionを開始してからの経過時間(実行時間)
+  double epsilon; // doubleの比較判定に使用
 
-  double dt;
-  double exec_tm;
-
-  double epsilon;
-  
-  double motion_time; // ff_motion_time or fb_motion_time
+  // motion_time = ff_motion_time or fb_motion_time
+  double motion_time;
   double ff_motion_time;
   double fb_motion_time;
   
-  int loop; // ドリブルのサイクルの切れ目をどうするか
-  int max_count; // 1サイクルの中でdt何個分か
-  int count; // dt何個目か
-
   // ドリブルの状態を区切る
-  // 0:動作前, 1:振り下ろし, 2:fb
-  int motion_state; 
+  int motion_state; // 0:動作前, 1:ff, 2:fb
 
-  // 0:rarm, 1:larm
-  std::vector<RTC::TimedPose3D> targetEEPose;
-  // std::vector<cnoid::Position> targetEEPose; // cnoid::Positionで扱ったほうが良かったりする??
+  // ff
+  std::vector<RTC::TimedPose3D> targetEEPose;      // ここに速度の情報を入れることはできるのか?
+  // std::vector<RTC::~~> targetEEState; // pos,vel,orientation,angular-vel
   std::vector<std::vector<double>> rarm_pos_range;
   std::vector<std::vector<double>> larm_pos_range;
   std::vector<std::vector<double>> rarm_rpy_range;
   std::vector<std::vector<double>> larm_rpy_range;
 
+  // fb
+  // 目標接触状態(pos(,vel),orientation(,angular-ver))
+  // 今はvelはなくていいので(最高到達点で叩くので)、TimedPose3Dで宣言
+  std::vector<RTC::TimedPose3D> targetContactEEPose;
+
+  // 目標の接触時のボールの状態(pos,vel)
+  // 今は最高到達点にしておく
+  std::vector<std::vector<double>> targetContactBallState;
+  
   std::vector<double> startBallPos;  // (最高到達点に達した)今のボールの位置
   std::vector<double> goalBallPos;   // バウンドした後のボールの最高到達位置
   std::vector<double> bound_point;   // 地面への衝突位置(z=0)
