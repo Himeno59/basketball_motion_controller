@@ -21,6 +21,7 @@
 #include <auto_stabilizer/idl/AutoStabilizerService.hh>
 
 #include "BasketballMotionControllerService_impl.h"
+#include "PolynomialInterpolator.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -31,37 +32,25 @@
 class BasketballMotionController : public RTC::DataFlowComponentBase{
 protected:
     
-  // inport
+  // InPort
   // ボールの予測軌道、速度
-  RTC::TimedDoubleSeq m_objRef_;
-  RTC::InPort<RTC::TimedDoubleSeq> m_objRefIn_;
-  
-  /* RTC::TimedDoubleSeq m_qRef_; */
-  /* RTC::InPort<RTC::TimedDoubleSeq> m_qRefIn_; */
-  /* RTC::TimedDoubleSeq m_tauRef_; */
-  /* RTC::InPort<RTC::TimedDoubleSeq> m_tauRefIn_; */
-  /* RTC::TimedDoubleSeq m_qAct_; */
-  /* RTC::InPort<RTC::TimedDoubleSeq> m_qActIn_; */
-  /* RTC::TimedDoubleSeq m_dqAct_; */
-  /* RTC::InPort<RTC::TimedDoubleSeq> m_dqActIn_; */
-  /* RTC::TimedDoubleSeq m_tauAct_; */
-  /* RTC::InPort<RTC::TimedDoubleSeq> m_tauActIn_; */
+  basketball_motion_controller_msgs::ObjStateStamped m_nowObjState_;
+  RTC::InPort<basketball_motion_controller_msgs::ObjStateStamped> m_nowObjStateIn_;
+  basketball_motion_controller_msgs::ObjStateStamped m_predObjState_;
+  RTC::InPort<basketball_motion_controller_msgs::ObjStateStamped> m_predObjStateIn_;
+  // fbを始めるかどうかのflag
+  RTC::TimedBoolean m_fbFlag_;
+  RTC::InPort<RTC::TimedBoolean> m_fbFlagIn_;
 
-  // outport
+  // OutPort
   // refEEPose
-  // 時系列のデータにする必要はある？
   std::vector<RTC::TimedPose3D> m_eePose_;
-  std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedPose3D> > > m_eePoseOut_;
-  
-  /* RTC::TimedDoubleSeq m_q_; */
-  /* RTC::OutPort<RTC::TimedDoubleSeq> m_qOut_; */
-  /* RTC::TimedDoubleSeq m_tau_; */
-  /* RTC::OutPort<RTC::TimedDoubleSeq> m_tauOut_; */
-  /* RTC::TimedDoubleSeq m_ */
+  std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedPose3D>>> m_eePoseOut_;
 
   BasketballMotionControllerService_impl m_service0_;
   RTC::CorbaPort m_BasketballMotionControllerServicePort_;
-  
+
+  // SolveFKModeをoffにするためにWholeBodyMasterSlaveを利用
   RTC::CorbaConsumer<OpenHRP::AutoStabilizerService> m_autoStabilizerService0_;
   RTC::CorbaPort m_AutoStabilizerServicePort_;
 
@@ -70,9 +59,13 @@ protected:
   void readInPortData();
   void writeOutPortData();
   void updateParam();
+  void stateManager();
   void genTargetEEPose();
   void ffTargetEEPose();
   void fbTargetEEPose();
+
+  void calcEEVelocity();
+  void setPolynomialConditions();
 
   void initPose();
   void resetParam();
@@ -92,6 +85,8 @@ public:
   bool stopDribbleMotion();
 
   bool BasketballMotionControllerParam(const double data);
+  bool setBasketballMotionControllerParam(const double data);
+  bool getBasketballMotionControllerParam(const double data);
 
 private:
   // 時間の管理
@@ -107,25 +102,48 @@ private:
   // ドリブルの状態を区切る
   int motion_state; // 0:動作前, 1:ff, 2:fb
 
+  // ボールの半径
+  double ball_r;
+
+  // 目標の接触時ボール状態(pos,vel)
+  // この変数を元に他のパラメタを決定する
+  // 今は目標の最高到達点の位置を設定しておく
+  // 0:右手, 1:左手
+  std::vector<basketball_motion_controller_msgs::ObjStateStamped> targetContactBallState;
+
+  // 予測した接触時のボールの状態(pos,vel)
+  // 今はpredObjeStateをそのまま代入し、最高到達点を次の接触状態とする
+  // このボールを右手でつくのか左手でつくのかを決めるフラグが必要になりそう
+  basketball_motion_controller_msgs::ObjStateStamped nextContactBallState;
+
+  // 目標の接触時ハンド状態
+  // 0:右手, 1:左手
+  // 必要な情報: x,y,zとその1階微分,2階微分, r,p,yとその1階微分,2階微分 -> 計18個
+  // {{x, dot(x), dot(dot(x))}, {y, dot(y), dot(dot(y))}, {z, dot(z), dot(dot(z))}, ~}
+  // x,y,z,r,p,y
+  std::vector<std::vector<double>> targetContactEEPos;
+  std::vector<std::vector<double>> targetContactEERPy
+  
   // ff
-  std::vector<RTC::TimedPose3D> targetEEPose;      // ここに速度の情報を入れることはできるのか?
+  /* std::vector<RTC::TimedPose3D> targetEEPose; */
+  /* std::vector<RTC::TimedPose3D> prevEEPose; */
+  std::vector<std::vector<double>> targetEEPose;
+  std::vector<std::vector<double>> prevEEPose;
+  std::vector<std::vector<double>> EEVel;
+  std::vector<std::vector<double>> prevEEvel;
+  std::vector<std::vector<double>> EEAcc;
+  
   // std::vector<RTC::~~> targetEEState; // pos,vel,orientation,angular-vel
   std::vector<std::vector<double>> rarm_pos_range;
   std::vector<std::vector<double>> larm_pos_range;
   std::vector<std::vector<double>> rarm_rpy_range;
   std::vector<std::vector<double>> larm_rpy_range;
 
-  // fb
-  // 目標接触状態(pos(,vel),orientation(,angular-ver))
-  // 今はvelはなくていいので(最高到達点で叩くので)、TimedPose3Dで宣言
-  std::vector<RTC::TimedPose3D> targetContactEEPose;
+  std::vector<std::vector<double>> rarm_pos;
+  std::vector<std::vector<double>> rarm_vel;
+  std::vector<std::vector<double>> rarm_acc;
+  std::vector<std::vector<double>> rarm_acc;
 
-  // 目標の接触時のボールの状態(pos,vel)
-  // 今は最高到達点にしておく
-  std::vector<std::vector<double>> targetContactBallState;
-  
-  std::vector<double> startBallPos;  // (最高到達点に達した)今のボールの位置
-  std::vector<double> goalBallPos;   // バウンドした後のボールの最高到達位置
   std::vector<double> bound_point;   // 地面への衝突位置(z=0)
   std::vector<double> d;             // bound_point計算用
   std::vector<double> dummyBallPos;  // test
@@ -136,9 +154,19 @@ private:
   bool motionEnd_flag;
   bool last_motion;
   bool stateChange_flag;
+  bool loop_init;
 
   std::mt19937_64 mt64;
   std::uniform_real_distribution<double> random;
+
+  // fb
+  PolynomialInterpolator fbInterpolator;
+  double tf;
+  std::vector<BoundaryConditions> pos_start_conditions;
+  std::vector<BoundaryConditions> pos_end_conditions;
+  std::vector<BoundaryConditions> rpy_start_conditions;
+  std::vector<BoundaryConditions> rpy_end_conditions;
+  Eigen::VectorXd fbTrajectoryTheta;
 
 };
 
