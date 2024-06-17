@@ -17,6 +17,7 @@ link_directories(
 rtmbuild_add_library(BasketballMotionController SHARED
   BasketballMotionController.cpp
   BasketballMotionControllerService_impl.cpp
+  PolynomialInterpolator.cpp
   )
 target_link_libraries(BasketballMotionController
   ${catkin_LIBRARIES}
