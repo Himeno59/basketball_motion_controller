@@ -5,7 +5,8 @@ add_definitions(-Wno-deprecated)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
-  basketball_motion_controller_msgs)
+  basketball_motion_controller_msgs
+  object_trajectory_estimator)
 
 find_package(PkgConfig)
 pkg_check_modules(openrtm_aist openrtm-aist REQUIRED)
@@ -23,7 +24,7 @@ set_target_properties(BasketballMotionControllerROSBridge PROPERTIES PREFIX "")
 add_executable(BasketballMotionControllerROSBridgeComp BasketballMotionControllerROSBridgeComp.cpp)
 target_link_libraries(BasketballMotionControllerROSBridgeComp BasketballMotionControllerROSBridge)
 
-install(TARGETS BasketballMotionControllerROSBridge
+install(TARGETS BasketballMotionControllerROSBridgeComp
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
