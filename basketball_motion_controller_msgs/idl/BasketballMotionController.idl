@@ -1,12 +1,23 @@
 #ifndef BasketballMotionController_idl
 #define BasketballMotionController_idl
 
+#include "ExtendedDataTypes.idl"
+
 module basketball_motion_controller_msgs
 {
   struct TemplateDataIdl
   {
     double data;
   };
+
+
+  struct ObjStateStamped
+  {
+    RTC::Time tm;
+    RTC::Point3D pos;
+    RTC::Vector3D vel;
+  };
+  
 };
 
 #endif
