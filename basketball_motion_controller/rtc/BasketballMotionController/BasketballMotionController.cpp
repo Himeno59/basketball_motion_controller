@@ -1,4 +1,4 @@
-#oinclude "BasketballMotionController.h"
+#include "BasketballMotionController.h"
 
 #include <random>
 #include <cmath>
@@ -16,89 +16,6 @@ BasketballMotionController::BasketballMotionController(RTC::Manager* manager):
   random(0.0, 0.05)
 {
   this->m_service0_.setComp(this);
-  
-  exec_tm = 0.0;
-  epsilon = 1e-6;
-
-  // state管理の都合上、dtの整数倍にしておく
-  ff_motion_time = 0.30;
-  fb_motion_time = 0.45; // 本当はfbの結果から
-  motion_time = ff_motion_time;
-
-  motion_state = 0; // 0:停止時, 1:ff, 2:fb
-
-  ball_r = 0.1225; // 他のボールも使えるようにするなら上から与えられるようにする??
-
-  /* -- targetContactBallState -- */
-  // todo: 上位から変更できるようにする
-  targetContactBallState.resize(2);
-  // 右手
-  // pos
-  targetContactBallState[0].pos.x = 0.60;
-  targetContactBallState[0].pos.y = -0.45;
-  targetContactBallState[0].pos.z = 1.1775;
-  targetContactBallState[0].vel.x = 0.0;
-  targetContactBallState[0].vel.y = 0.0;
-  targetContactBallState[0].vel.z = 0.0;
-
-  // 左手
-  targetContactBallState[1].pos.x = 0.60;
-  targetContactBallState[1].pos.y = 0.45;
-  targetContactBallState[1].pos.z = 1.1775;
-  targetContactBallState[1].vel.x = 0.0;
-  targetContactBallState[1].vel.y = 0.0;
-  targetContactBallState[1].vel.z = 0.0;
-
-  /* -- nextContactBallState -- */
-  nextContactBallState = targetContactBallState[0];
-
-
-  
-
-  /* -- targetContactEEPos/Rpy -- */
-  // posはボールの半径+ハンドの厚み分zを高くする
-  // rpyは一旦手動で設定
-  targetContactEEPos.resize(3, std::vector<double>(3)); // x,y,z
-  targetContactEERpy.resize(3, std::vector<double>(3)); // r,p,y
-  // 右手
-  targetContactEEPose[0].data.position.x = targetContactBallState[0].pos.x;
-  targetContactEEPose[0].data.position.y = targetContactBallState[0].pos.y;
-  targetContactEEPose[0].data.position.z = targetContactBallState[0].pos.z + ball_r;
-  targetContactEEPose[0].data.orientation.r = -M_PI/2.0;
-  targetContactEEPose[0].data.orientation.p = -M_PI/8.0;
-  targetContactEEPose[0].data.orientation.y = 0.0;
-  // // 左手
-  // targetContactEEPose[1].data.position.x = targetContactBallState[1].pos.x;
-  // targetContactEEPose[1].data.position.y = targetContactBallState[1].pos.y;
-  // targetContactEEPose[1].data.position.z = targetContactBallState[1].pos.x + ball_r;
-  // targetContactEEPose[1].data.orientation.r = -M_PI/2.0; // M_PI/2.0かも
-  // targetContactEEPose[1].data.orientation.p = -M_PI/8.0;
-  // targetContactEEPose[1].data.orientation.y = 0.0;
-
-  // ffのmotionのパラメタ初期化
-  // start, rangeの順番
-  rarm_pos_range = {{targetContactEEPose[0].data.position.x, 0.020},
-		    {targetContactEEPose[0].data.position.y, 0.0},
-		    {targetContactEEPose[0].data.position.z, -0.30}};
-  rarm_rpy_range = {{targetContactEEPose[0].data.orientation.r, 0.0},
-		    {targetContactEEPose[0].data.orientation.p, M_PI/4.0},
-		    {targetContactEEPose[0].data.orientation.y, 0.0}};
-  // 左手は動かさない想定で一旦実装する
-  larm_pos_range = {{0.0, 0.0}, {0.45, 0.0}, {0.68, 0.0}};
-  larm_rpy_range = {{0.0, 0.0}, {M_PI/2.5, 0.0}, {0.0, 0.0}};
-
-  // resize
-  bound_point.resize(3);
-  dummyBallPos.resize(3);
-    
-  // flag
-  motionEnd_flag = false;
-  last_motion = false;
-  stateChange_flag = false;
-  loop_init = true;
-
-  startDribbleMode_flag = false;
-  startDribbleMotion_flag = false;
 }
 
 RTC::ReturnCode_t BasketballMotionController::onInitialize(){
@@ -118,9 +35,118 @@ RTC::ReturnCode_t BasketballMotionController::onInitialize(){
     addOutPort(portName.c_str(), *(m_eePoseOut_[i]));
   }
 
-  // resize
-  targetEEPose.resize(eeNames.size());
+  // 時間関連
+  exec_tm = 0.0;
+  epsilon = 1e-6;
+
+  // state管理の都合上、dtの整数倍にしておく
+  ff_motion_time = 0.35;
+  fb_motion_time = 0.50; // 本当はfbの結果から
+  motion_time = ff_motion_time;
+
+  motion_state = 0; // 0:停止時, 1:ff, 2:fb
+
+  ball_r = 0.1225; // 他のボールも使えるようにするなら上から与えられるようにする??
+
+  /* -- targetContactBallState -- */
+  // todo: 上位から変更できるようにする
+  targetContactBallState.resize(2);
+  // 右手
+  // pos
+  targetContactBallState[0].pos.x = 0.60;
+  targetContactBallState[0].pos.y = -0.45;
+  targetContactBallState[0].pos.z = 1.1775;
+  targetContactBallState[0].vel.x = 0.0;
+  targetContactBallState[0].vel.y = 0.0;
+  targetContactBallState[0].vel.z = 0.0;
+  // // 左手
+  // targetContactBallState[1].pos.x = 0.60;
+  // targetContactBallState[1].pos.y = 0.45;
+  // targetContactBallState[1].pos.z = 1.1775;
+  // targetContactBallState[1].vel.x = 0.0;
+  // targetContactBallState[1].vel.y = 0.0;
+  // targetContactBallState[1].vel.z = 0.0;
+
+  /* -- nextContactBallState -- */
+  // fbの値で更新する
+  nextContactBallState = targetContactBallState[0];
+
+  /* -- targetContactEEPos/Rpy -- */
+  // posはボールの半径+ハンドの厚み分zを高くする
+  // rpyは一旦手動で設定
+  // nextContactBallStateから決める
+  targetContactEEPose = Eigen::MatrixXd(4,6);
+  targetContactEEVel  = Eigen::MatrixXd(4,6);
+  targetContactEEAcc  = Eigen::MatrixXd(4,6);
+  // 右手
+  targetContactEEPose(2,0) = targetContactBallState[0].pos.x;
+  targetContactEEPose(2,1) = targetContactBallState[0].pos.y;
+  targetContactEEPose(2,2) = targetContactBallState[0].pos.z + ball_r;
+  targetContactEEPose(2,3) = -M_PI/2.0;
+  targetContactEEPose(2,4) = -M_PI/8.0;
+  targetContactEEPose(2,5) = 0.0;
+  // // 左手
+  // targetContactEEPose(3,0) = targetContactBallState[1].pos.x;
+  // targetContactEEPose(3,1) = targetContactBallState[1].pos.y;
+  // targetContactEEPose(3,2) = targetContactBallState[1].pos.x + ball_r;
+  // targetContactEEPose(3,3) = -M_PI/2.0; // M_PI/2.0かも
+  // targetContactEEPose(3,4) = -M_PI/8.0;
+  // targetContactEEPose(3,5) = 0.0;
+
+  // ffのmotionのパラメタ初期化
+  targetEEPose = Eigen::MatrixXd(4,6);
+  prevEEPose   = Eigen::MatrixXd(4,6);
+  EEVel        = Eigen::MatrixXd(4,6);
+  prevEEVel    = Eigen::MatrixXd(4,6);
+  EEAcc        = Eigen::MatrixXd(4,6);
   
+  // start, rangeの順番
+  rarm_pos_params = {{targetContactEEPose(2,0), 0.020},
+		     {targetContactEEPose(2,1), 0.0},
+		     {targetContactEEPose(2,2), -0.30}};
+  rarm_rpy_params = {{targetContactEEPose(2,3), 0.0},
+		     {targetContactEEPose(2,4), M_PI/4.0},
+		     {targetContactEEPose(2,5), 0.0}};
+  // 左手は動かさない想定で一旦実装する
+  larm_pos_params = {{0.0, 0.0}, {0.45, 0.0}, {0.68, 0.0}};
+  larm_rpy_params = {{0.0, 0.0}, {M_PI/2.5, 0.0}, {0.0, 0.0}};
+  
+  // resize
+  bound_point.resize(3);
+  dummyBallPos.resize(3);
+    
+  // flag
+  motionEnd_flag = false;
+  last_motion = false;
+  stateChange_flag = false;
+  loop_init = true;
+  fb_initialize = true;
+
+  startDribbleMode_flag = false;
+  startDribbleMotion_flag = false;
+
+  // prevEEPoseをinitPoseに合わせる
+  prevEEPose(2,0) = rarm_pos_params[0][0];
+  prevEEPose(2,1) = rarm_pos_params[1][0];
+  prevEEPose(2,2) = rarm_pos_params[2][0];
+  prevEEPose(2,3) = rarm_rpy_params[0][0];
+  prevEEPose(2,4) = rarm_rpy_params[1][0];
+  prevEEPose(2,5) = rarm_rpy_params[2][0];
+  // 左手
+  prevEEPose(3,0) = larm_pos_params[0][0];
+  prevEEPose(3,1) = larm_pos_params[1][0];
+  prevEEPose(3,2) = larm_pos_params[2][0];
+  prevEEPose(3,3) = larm_rpy_params[0][0];
+  prevEEPose(3,4) = larm_rpy_params[1][0];
+  prevEEPose(3,5) = larm_rpy_params[2][0];
+
+  // fb
+  polynomial_degree = 3;
+  rarm_fb_theta.resize(6);
+  larm_fb_theta.resize(6);
+  start_conditions.resize(6);
+  end_conditions.resize(6);
+    
   // srv
   m_BasketballMotionControllerServicePort_.registerProvider("service0", "BasketballMotionControllerService", m_service0_);
   addPort(m_BasketballMotionControllerServicePort_);
@@ -154,15 +180,14 @@ RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
     // startDribbleMotionが呼ばれてflag=trueになるまではinitPoseを送り続ける
     initPose();
   } else {
-    // readInPortData
     readInPortData();
     
     // 状態の管理,更新
     stateManager();
-    
-    // update param
+
+    // パラメタの更新
     if (stateChange_flag) {
-      updateParam();
+      updateParams();
       stateChange_flag = false; // とりあえずテストで切り替わったタイミングに一回paramを更新するのを試す
     }
 
@@ -171,7 +196,6 @@ RTC::ReturnCode_t BasketballMotionController::onExecute(RTC::UniqueId ec_id){
     
   }
   
-  // writeOutPortData
   writeOutPortData();
   
   return RTC::RTC_OK;
@@ -188,6 +212,8 @@ void BasketballMotionController::readInPortData() {
   // predObjState
   if (m_predObjStateIn_.isNew()) {
     m_predObjStateIn_.read();
+
+    contact_tm = m_predObjState_.tm.nsec / 1e-9;
   }
   
   // // fbFlag
@@ -199,39 +225,29 @@ void BasketballMotionController::readInPortData() {
 void BasketballMotionController::writeOutPortData() {
   // eePose
   for(int i=0;i<4;i++){
-    // // position
-    // m_eePose_[i].data.position.x = targetEEPose[i].data.position.x;
-    // m_eePose_[i].data.position.y = targetEEPose[i].data.position.y;
-    // m_eePose_[i].data.position.z = targetEEPose[i].data.position.z;
-    // // orientation
-    // m_eePose_[i].data.orientation.r = targetEEPose[i].data.orientation.r;
-    // m_eePose_[i].data.orientation.p = targetEEPose[i].data.orientation.p;
-    // m_eePose_[i].data.orientation.y = targetEEPose[i].data.orientation.y;
-
     // position
-    m_eePose_[i].data.position.x = targetEEPose[i][0];
-    m_eePose_[i].data.position.y = targetEEPose[i][1];
-    m_eePose_[i].data.position.z = targetEEPose[i][2];
+    m_eePose_[i].data.position.x = targetEEPose(i,0);
+    m_eePose_[i].data.position.y = targetEEPose(i,1);
+    m_eePose_[i].data.position.z = targetEEPose(i,2);
     // orientation
-    m_eePose_[i].data.orientation.r = targetEEPose[i][3];
-    m_eePose_[i].data.orientation.p = targetEEPose[i][4];
-    m_eePose_[i].data.orientation.y = targetEEPose[i][5];
+    m_eePose_[i].data.orientation.r = targetEEPose(i,3);
+    m_eePose_[i].data.orientation.p = targetEEPose(i,4);
+    m_eePose_[i].data.orientation.y = targetEEPose(i,5);
     
     m_eePoseOut_[i]->write();
   }
 }
 
 void BasketballMotionController::dummyObjPos() {
-  dummyBallPos[0] = rarm_pos_range[0][0];
-  dummyBallPos[1] = rarm_pos_range[1][0];
+  dummyBallPos[0] = rarm_pos_params[0][0];
+  dummyBallPos[1] = rarm_pos_params[1][0];
   dummyBallPos[2] = 1.3 + random(mt64);
   std::cout << "dummy_z:" << dummyBallPos[2] << std::endl;
 }
 
 void BasketballMotionController::stateManager() {
-  // todo: ここを変更
   // サイクル終了判定
-  if (std::fabs(exec_tm - (motion_time + dt)) < epsilon) { // 
+  if (std::fabs(exec_tm - (motion_time + dt)) < epsilon) {
     exec_tm = 0.0;
     stateChange_flag = true;
     loop_init = true;
@@ -249,15 +265,20 @@ void BasketballMotionController::stateManager() {
   loop_init = false;
 }
 
-void BasketballMotionController::updateParam() {
+void BasketballMotionController::updateParams() {
   if (motionEnd_flag) {
     // 動作停止モードへ以降
     if (motion_state==1) {
       motion_state = 2;
       motion_time = 2.0;
+      fb_initialize = true;
+      
     } else if (motion_state==2) {
       motion_state = 1;
       motion_time = 2.0;
+
+      setFeedForwardParams();
+      
     }
 
     last_motion = true;
@@ -268,232 +289,252 @@ void BasketballMotionController::updateParam() {
       // fb_mode
       motion_state = 2;
       motion_time = fb_motion_time;
-      // test
-      // dummyObjPos();
-      // rarm_pos_range[2][0] = dummyBallPos[2];
+      fb_initialize = true;
+      
     } else if (motion_state==2) {
       // ff_mode
       motion_state = 1;
       motion_time = ff_motion_time;
-      
-      // rangeの設定
-      // startは最高到達点でcontactしたところ
-      // goalはどうする??とりあえず変更なし??
-      // rarm_pos_range[0][0] = targetContactEEPose[0].data.position.x;
-      // rarm_pos_range[1][0] = targetContactEEPose[1].data.position.y;
-      // rarm_pos_range[2][0] = targetContactEEPose[2].data.position.z;
+
+      setFeedForwardParams();
     }
-  }
-  
+  }  
 }
 
+/* -- フィードフォワードのモーションを計算するためのパラメタの設定 -- */
+// start: targetContactEEPose
+// range: targetContactBallStateとの関係性から決めるorマップを作るようにしたいが、一旦実装はしない
+void BasketballMotionController::setFeedForwardParams() {
+  /* -- start -- */
+  // pos
+  rarm_pos_params[0][0] = targetContactEEPose(2,0);
+  rarm_pos_params[1][0] = targetContactEEPose(2,1);
+  rarm_pos_params[2][0] = targetContactEEPose(2,2);
+  // orientation
+  rarm_rpy_params[0][0] = targetContactEEPose(2,3);
+  rarm_rpy_params[1][0] = targetContactEEPose(2,4);
+  rarm_rpy_params[2][0] = targetContactEEPose(2,5);
+
+  /* -- range -- */
+  // とりあえずそのまま
+}
+
+/* -- エンドエフェクタのpose,vel,accの計算 -- */
 void BasketballMotionController::genTargetEEPose() {
-  // ffとfbの切り替え
+  // poseの計算
   if (motion_state==1) {
     ffTargetEEPose();
   } else if (motion_state==2) {
     fbTargetEEPose();
   }
+
+  // vel、accの計算
+  EEVel = (targetEEPose - prevEEPose) / dt;
+  EEAcc = (EEVel - prevEEVel) / dt;
+  
+  // 値の保持
+  prevEEPose = targetEEPose;
+  prevEEVel = EEVel;
 }
 
-// 三角関数によるフィードフォワード軌道生成
-// todo: ここをもう少しそれっぽいものにしたい
+/* -- フィードフォワード軌道生成 -- */
+// 現状は三角関数による補間
 void BasketballMotionController::ffTargetEEPose() {
   // x,y = start + 0.5 * range * (1 - cos(2pi/T)*t)
   //   z = start + 0.5 * range * (1 - cos(pi/T)*t)
 
+  // legは全て0を送るので何もしない
+  
   // rarm
   // position
-  targetEEPose[2][0] = rarm_pos_range[0][0] + 0.5*rarm_pos_range[0][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  targetEEPose[2][1] = rarm_pos_range[1][0] + 0.5*rarm_pos_range[1][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  targetEEPose[2][2] = rarm_pos_range[2][0] + 0.5*rarm_pos_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
+  targetEEPose(2,0) = rarm_pos_params[0][0] + 0.5*rarm_pos_params[0][1]*(1 - cos((2*M_PI/motion_time)*exec_tm));
+  targetEEPose(2,1) = rarm_pos_params[1][0] + 0.5*rarm_pos_params[1][1]*(1 - cos((2*M_PI/motion_time)*exec_tm));
+  targetEEPose(2,2) = rarm_pos_params[2][0] + 0.5*rarm_pos_params[2][1]*(1 - cos((M_PI/motion_time)*exec_tm));
   // orientation
-  targetEEPose[2][3] = rarm_rpy_range[0][0] + 0.5*rarm_rpy_range[0][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
-  targetEEPose[2][4] = rarm_rpy_range[1][0] + 0.5*rarm_rpy_range[1][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
-  targetEEPose[2][5] = rarm_rpy_range[2][0] + 0.5*rarm_rpy_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
+  targetEEPose(2,3) = rarm_rpy_params[0][0] + 0.5*rarm_rpy_params[0][1]*(1 - cos((M_PI/motion_time)*exec_tm));
+  targetEEPose(2,4) = rarm_rpy_params[1][0] + 0.5*rarm_rpy_params[1][1]*(1 - cos((M_PI/motion_time)*exec_tm));
+  targetEEPose(2,5) = rarm_rpy_params[2][0] + 0.5*rarm_rpy_params[2][1]*(1 - cos((M_PI/motion_time)*exec_tm));
   
   // larm
   // 今は同じ値を送り続ける
-  targetEEPose[3][0] = larm_pos_range[0][0];
-  targetEEPose[3][1] = larm_pos_range[1][0];
-  targetEEPose[3][2] = larm_pos_range[2][0];
-  targetEEPose[3][3] = larm_rpy_range[0][0];
-  targetEEPose[3][4] = larm_rpy_range[1][0];
-  targetEEPose[3][5] = larm_rpy_range[2][0];
+  targetEEPose(3,0) = larm_pos_params[0][0];
+  targetEEPose(3,1) = larm_pos_params[1][0];
+  targetEEPose(3,2) = larm_pos_params[2][0];
+  targetEEPose(3,3) = larm_rpy_params[0][0];
+  targetEEPose(3,4) = larm_rpy_params[1][0];
+  targetEEPose(3,5) = larm_rpy_params[2][0];
   
+}
+
+/* -- 次の目標接触ハンド状態の計算 -- */
+// predObjState -> nextContactBallState -> targetContactEEState(Pose/Vel/Acc)
+void BasketballMotionController::calcContactEEPose() {
+  // 将来的にここに代入以外の処理を入れるかもしれない
+  // nextContactBallState = m_predObjState_;
+
+  // test
+  nextContactBallState.pos.x = 0.60;
+  nextContactBallState.pos.y = -0.45;
+  nextContactBallState.pos.z = 1.1775;
+
+  /* -- Pose -- */
+  // pos
+  // とりあえずx,yは同じで、zだけボール半径分上にするようにする
+  targetContactEEPose(2,0) = nextContactBallState.pos.x;
+  targetContactEEPose(2,1) = nextContactBallState.pos.y;
+  targetContactEEPose(2,2) = nextContactBallState.pos.z + ball_r;
+  // orientation
+  // まだ一定の値を入れる
+  targetContactEEPose(2,3) = -M_PI/2.0;
+  targetContactEEPose(2,4) = -M_PI/8.0;
+  targetContactEEPose(2,5) = 0.0;
+
+  /* -- Vel -- */
+  // とりあえずすべて0で静止するのが目標
+  // pos
+  targetContactEEVel(2,0) = 0.0;
+  targetContactEEVel(2,1) = 0.0;
+  targetContactEEVel(2,2) = 0.0;
+  // orientation
+  targetContactEEVel(2,3) = 0.0;
+  targetContactEEVel(2,4) = 0.0;
+  targetContactEEVel(2,5) = 0.0;
+  
+  // /* -- Acc -- */
+}
+
+
+/* -- 多項式補間をするための初期条件と終端条件の設定 -- */
+// 右手だけ
+void BasketballMotionController::setPolynomialConditions() {
+  for (int i=0; i<6; i++) {
+    // start
+    // 今の状態から決まる
+    start_conditions[i].val        = prevEEPose(2,i);
+    // start_conditions[i].first_der  = EEVel(2,i);
+    start_conditions[i].first_der  = 0.0;
+    // start_conditions[i].second_der = EEAcc(2,i);
+
+    
+    // end
+    // fbの値から決まる
+    end_conditions[i].val        = targetContactEEPose(2,i);
+    end_conditions[i].first_der  = targetContactEEVel(2,i);
+    // end_conditions[i].second_der = targetContactEEAcc.data;
+
+  }
+}
+
+/* -- フィードバック軌道生成 --*/
+// 時間の多項式による補間
+// 加速度連続を考慮する場合は5次の項まで入れるが、一旦3次で速度連続までで考える
+void BasketballMotionController::fbTargetEEPose() {
+  // とりあえずフィードバックが入った最初の値で軌道を生成するようにする
+  if (fb_initialize) {
+    // 初期条件と終端条件の設定
+    setPolynomialConditions();
+
+    // 3次多項式の係数の計算
+    // とりあえず右手だけ
+    for (int i=0; i<6; i++) {
+      // rarm_fb_theta[i] = fbInterpolator.calcCoefficients(start_conditions[i], end_conditions[i], contact_tm);
+      rarm_fb_theta[i] = fbInterpolator.calcCoefficients(start_conditions[i], end_conditions[i], motion_time);
+    }
+
+    fb_initialize = false;
+  }
+
+  // legは全て0を送るので何もしない
+
+  // // rarm
+  // for (int i=0; i<6; i++) {
+  //   for (int j=0; j<polynomial_degree+1; j++) {
+  //   targetEEPose(2,i) += rarm_fb_theta[i][j]*pow(exec_tm, j);
+  //   }
+  //   if (i==2) std::cout << "z:" << targetEEPose(2,i) << std::endl;
+  // }
+
+  // 3次
+  // rarm
+  targetEEPose(2,0)
+    = rarm_fb_theta[0][0] + rarm_fb_theta[0][1]*pow(exec_tm, 1) + rarm_fb_theta[0][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[0][3]*pow(exec_tm, 3);
+  targetEEPose(2,1)
+    = rarm_fb_theta[1][0] + rarm_fb_theta[1][1]*pow(exec_tm, 1) + rarm_fb_theta[1][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[1][3]*pow(exec_tm, 3);
+  targetEEPose(2,2)
+    = rarm_fb_theta[2][0] + rarm_fb_theta[2][1]*pow(exec_tm, 1) + rarm_fb_theta[2][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[2][3]*pow(exec_tm, 3);
+
+  std::cout << "z:" << targetEEPose(2,2) << std::endl;
+  
+  // orientation
+  targetEEPose(2,3)
+    = rarm_fb_theta[3][0] + rarm_fb_theta[3][1]*pow(exec_tm, 1) + rarm_fb_theta[3][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[3][3]*pow(exec_tm, 3);
+  targetEEPose(2,4)
+    = rarm_fb_theta[4][0] + rarm_fb_theta[4][1]*pow(exec_tm, 1) + rarm_fb_theta[4][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[4][3]*pow(exec_tm, 3);
+  targetEEPose(2,5)
+    = rarm_fb_theta[5][0] + rarm_fb_theta[5][1]*pow(exec_tm, 1) + rarm_fb_theta[5][2]*pow(exec_tm, 2)
+    + rarm_fb_theta[5][3]*pow(exec_tm, 3);
+    
+  // larm
+  // 今は同じ値を送り続ける
+  targetEEPose(3,0) = larm_pos_params[0][0];
+  targetEEPose(3,1) = larm_pos_params[1][0];
+  targetEEPose(3,2) = larm_pos_params[2][0];
+  targetEEPose(3,3) = larm_rpy_params[0][0];
+  targetEEPose(3,4) = larm_rpy_params[1][0];
+  targetEEPose(3,5) = larm_rpy_params[2][0];
+
+  /* ---------------------------------------------------------------------------------------------------- */
+  
+  // // 昔のver
+  // // x,y = start + 0.5 * range * (1 - cos(2pi/T)*t)
+  // //   z = start + 0.5 * range * (1 - cos(pi/T)*t)
+
+  // // legは全て0を送るので何もしない
+
   // // rarm
   // // position
-  // targetEEPose[2].data.position.x = rarm_pos_range[0][0] + 0.5*rarm_pos_range[0][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  // targetEEPose[2].data.position.y = rarm_pos_range[1][0] + 0.5*rarm_pos_range[1][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  // targetEEPose[2].data.position.z = rarm_pos_range[2][0] + 0.5*rarm_pos_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
+  // targetEEPose(2,0) = rarm_pos_params[0][0] + 0.5*rarm_pos_params[0][1]*(1 - cos((2*M_PI/motion_time)*exec_tm));
+  // targetEEPose(2,1) = rarm_pos_params[1][0] + 0.5*rarm_pos_params[1][1]*(1 - cos((2*M_PI/motion_time)*exec_tm));
+  // targetEEPose(2,2) = rarm_pos_params[2][0] + 0.5*rarm_pos_params[2][1]*(1 - cos((M_PI/motion_time)*exec_tm + M_PI));
   // // orientation
-  // targetEEPose[2].data.orientation.r = rarm_rpy_range[0][0] + 0.5*rarm_rpy_range[0][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
-  // targetEEPose[2].data.orientation.p = rarm_rpy_range[1][0] + 0.5*rarm_rpy_range[1][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
-  // targetEEPose[2].data.orientation.y = rarm_rpy_range[2][0] + 0.5*rarm_rpy_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm));
+  // targetEEPose(2,3) = rarm_rpy_params[0][0] + 0.5*rarm_rpy_params[0][1]*(1 - cos((M_PI/motion_time)*exec_tm + M_PI));
+  // targetEEPose(2,4) = rarm_rpy_params[1][0] + 0.5*rarm_rpy_params[1][1]*(1 - cos((M_PI/motion_time)*exec_tm + M_PI));
+  // targetEEPose(2,5) = rarm_rpy_params[2][0] + 0.5*rarm_rpy_params[2][1]*(1 - cos((M_PI/motion_time)*exec_tm + M_PI));
   
   // // larm
   // // 今は同じ値を送り続ける
-  // targetEEPose[3].data.position.x = larm_pos_range[0][0];
-  // targetEEPose[3].data.position.y = larm_pos_range[1][0];
-  // targetEEPose[3].data.position.z = larm_pos_range[2][0];
-  // targetEEPose[3].data.orientation.r = larm_rpy_range[0][0];
-  // targetEEPose[3].data.orientation.p = larm_rpy_range[1][0];
-  // targetEEPose[3].data.orientation.y = larm_rpy_range[2][0];
-  
-  // legは全て0を送るので何もしない
-
-  /* ---------------------------------------------------------- */
-
-  // 値の保持
-  prev_EEPose = targetEEPose;
-  
-}
-
-void calcEEVelocity() {
-  // pos
-  EEVel[2][0] = (targetEEPose[2].data.position.x - prevEEPose[2].data.position.x) / dt;
-  EEVel[2][1] = (targetEEPose[2].data.position.y - prevEEPose[2].data.position.y) / dt;
-  EEVel[2][2] = (targetEEPose[2].data.position.z - prevEEPose[2].data.position.z) / dt;
-  // rpy
-  EEVel[2][3] = (targetEEPose[2].data.orientation.r - prevEEPose[2].data.orientation.r) / dt;
-  EEVel[2][4] = (targetEEPose[2].data.orientation.p - prevEEPose[2].data.orientation.p) / dt;
-  EEVel[2][5] = (targetEEPose[2].data.orientation.y - prevEEPose[2].data.orientation.y) / dt;
-  
-  // for (int i=0; i<4; i++) {
-  //   // pos
-  //   EEVel[i][0] = (targetEEPose[i].data.position.x - prevEEPose[i].data.position.x) / dt;
-  //   EEVel[i][1] = (targetEEPose[i].data.position.y - prevEEPose[i].data.position.y) / dt;
-  //   EEVel[i][2] = (targetEEPose[i].data.position.z - prevEEPose[i].data.position.z) / dt;
-  //   // rpy
-  //   EEVel[i][3] = (targetEEPose[i].data.orientation.r - prevEEPose[i].data.orientation.r) / dt;
-  //   EEVel[i][4] = (targetEEPose[i].data.orientation.p - prevEEPose[i].data.orientation.p) / dt;
-  //   EEVel[i][5] = (targetEEPose[i].data.orientation.y - prevEEPose[i].data.orientation.y) / dt;
-  // }
-}
-
-void calcEEAcceleratin() {
-  EEAcc = (EEVel - prevEEAcc) / dt;
-}
-
-// 多項式補間をするための初期条件と終端条件の設定 
-void setPolynomialConditions() {
-
-  tf = ;
-
-  
-  /* -- pos start -- */
-  // x
-  pos_start_conditions[0].val = prevEEPose[2].data.position.x;
-  pos_start_conditions[0].first_der = EEVel[2][0];
-  pos_start_conditions[0].second_der = ;
-  // y
-  pos_start_conditions[1].val = prevEEPose[2].data.position.y;
-  pos_start_conditions[1].first_der = EEVel[2][1];
-  pos_start_conditions[1].second_der = ;
-  // z
-  pos_start_conditions[2].val = prevEEPose[2].data.position.z;
-  pos_start_conditions[2].first_der = EEVel[2][2];
-  pos_start_conditions[2].second_der = ;
-
-  /* -- rpy start -- */
-  // r
-  rpy_start_conditions[0].val = prevEEPose[2].data.orientation.r;
-  rpy_start_conditions[0].first_der = EEVel[2][3];
-  rpy_start_conditions[0].second_der = ;
-  // p
-  rpy_start_conditions[1].val = prevEEPose[2].data.orientation.p;
-  rpy_start_conditions[1].first_der = EEVel[2][4];
-  rpy_start_conditions[1].second_der = ;
-  // y
-  rpy_start_conditions[2].val = prevEEPose[2].data.orientation.y;
-  rpy_start_conditions[2].first_der = EEVel[2][5];
-  rpy_start_conditions[2].second_der = ;
-
-  /* -- pos end -- */
-  // x
-  pos_end_conditions[0].val = ;
-  pos_end_conditions[0].first_der = ;
-  pos_end_conditions[0].second_der = ;
-  // y
-  pos_end_conditions[1].val = ;
-  pos_end_conditions[1].first_der = ;
-  pos_end_conditions[1].second_der = ;
-  // z
-  pos_end_conditions[2].val = ;
-  pos_end_conditions[2].first_der = ;
-  pos_end_conditions[2].second_der = ;
-
-  /* -- rpy end -- */
-  // r
-  rpy_end_conditions[0].val = ;
-  rpy_end_conditions[0].first_der = ;
-  rpy_end_conditions[0].second_der = ;
-  // p
-  rpy_end_conditions[1].val = ;
-  rpy_end_conditions[1].first_der = ;
-  rpy_end_conditions[1].second_der = ;
-  //y
-  rpy_end_conditions[2].val = ;
-  rpy_end_conditions[2].first_der = ;
-  rpy_end_conditions[2].second_der = ;
-  
-}
-
-// 多項式補間によるフィードバック軌道生成
-// 初期位置/速度, 終端位置/速度の4条件から3次関数の補間軌道を作る
-void BasketballMotionController::fbTargetEEPose() {
-  // 初期条件と終端条件の設定
-  setPolynomialConditions();
-
-  // 5次多項式の係数の計算
-    
-  
-  ///////////
-
-  // 昔のver
-  // x,y = start + 0.5 * range * (1 - cos(2pi/T)*t)
-  //   z = start + 0.5 * range * (1 - cos(pi/T)*t)
-
-  // rarm
-  // position
-  targetEEPose[2].data.position.x = rarm_pos_range[0][0] + 0.5*rarm_pos_range[0][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  targetEEPose[2].data.position.y = rarm_pos_range[1][0] + 0.5*rarm_pos_range[1][1]*(1 - std::cos((2*M_PI/motion_time)*exec_tm));
-  targetEEPose[2].data.position.z = rarm_pos_range[2][0] + 0.5*rarm_pos_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm + M_PI));
-  // orientation
-  targetEEPose[2].data.orientation.r = rarm_rpy_range[0][0] + 0.5*rarm_rpy_range[0][1]*(1 - std::cos((M_PI/motion_time)*exec_tm + M_PI));
-  targetEEPose[2].data.orientation.p = rarm_rpy_range[1][0] + 0.5*rarm_rpy_range[1][1]*(1 - std::cos((M_PI/motion_time)*exec_tm + M_PI));
-  targetEEPose[2].data.orientation.y = rarm_rpy_range[2][0] + 0.5*rarm_rpy_range[2][1]*(1 - std::cos((M_PI/motion_time)*exec_tm + M_PI));
-  
-  // larm
-  // 今は同じ値を送り続ける
-  targetEEPose[3][0] = larm_pos_range[0][0];
-  targetEEPose[3][1] = larm_pos_range[1][0];
-  targetEEPose[3][2] = larm_pos_range[2][0];
-  targetEEPose[3][3] = larm_rpy_range[0][0];
-  targetEEPose[3][4] = larm_rpy_range[1][0];
-  targetEEPose[3][5] = larm_rpy_range[2][0];
-  
-  // legは全て0を送るので何もしない
-
+  // targetEEPose(3,0) = larm_pos_params[0][0];
+  // targetEEPose(3,1) = larm_pos_params[1][0];
+  // targetEEPose(3,2) = larm_pos_params[2][0];
+  // targetEEPose(3,3) = larm_rpy_params[0][0];
+  // targetEEPose(3,4) = larm_rpy_params[1][0];
+  // targetEEPose(3,5) = larm_rpy_params[2][0];
 }
   
 void BasketballMotionController::initPose(){
-  // 単位は[m]
-  // 右手
-  targetEEPose[2][0] = rarm_pos_range[0][0];
-  targetEEPose[2][1] = rarm_pos_range[1][0];
-  targetEEPose[2][2] = rarm_pos_range[2][0];
-  targetEEPose[2][3] = rarm_rpy_range[0][0];
-  targetEEPose[2][4] = rarm_rpy_range[1][0];
-  targetEEPose[2][5] = rarm_rpy_range[2][0];
+  // legは全て0を送るので何もしない
+  
+  // rarm
+  targetEEPose(2,0) = rarm_pos_params[0][0];
+  targetEEPose(2,1) = rarm_pos_params[1][0];
+  targetEEPose(2,2) = rarm_pos_params[2][0];
+  targetEEPose(2,3) = rarm_rpy_params[0][0];
+  targetEEPose(2,4) = rarm_rpy_params[1][0];
+  targetEEPose(2,5) = rarm_rpy_params[2][0];
+  
   // 左手
-  targetEEPose[3][0] = larm_pos_range[0][0];
-  targetEEPose[3][1] = larm_pos_range[1][0];
-  targetEEPose[3][2] = larm_pos_range[2][0];
-  targetEEPose[3][3] = larm_rpy_range[0][0];
-  targetEEPose[3][4] = larm_rpy_range[1][0];
-  targetEEPose[3][5] = larm_rpy_range[2][0];
-  // 脚は全て0を送るので何もしない
+  targetEEPose(3,0) = larm_pos_params[0][0];
+  targetEEPose(3,1) = larm_pos_params[1][0];
+  targetEEPose(3,2) = larm_pos_params[2][0];
+  targetEEPose(3,3) = larm_rpy_params[0][0];
+  targetEEPose(3,4) = larm_rpy_params[1][0];
+  targetEEPose(3,5) = larm_rpy_params[2][0];
+
 }
 
 void BasketballMotionController::resetParam(){

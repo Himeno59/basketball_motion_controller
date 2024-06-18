@@ -5,6 +5,7 @@
 #include <cmath>
 #include <random>
 #include <chrono>
+#include <eigen3/Eigen/Dense>
 
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
@@ -58,14 +59,14 @@ protected:
   // utility functions
   void readInPortData();
   void writeOutPortData();
-  void updateParam();
+  void updateParams();
   void stateManager();
   void genTargetEEPose();
   void ffTargetEEPose();
   void fbTargetEEPose();
-
-  void calcEEVelocity();
+  void setFeedForwardParams();
   void setPolynomialConditions();
+  void calcContactEEPose();
 
   void initPose();
   void resetParam();
@@ -90,9 +91,10 @@ public:
 
 private:
   // 時間の管理
-  double dt;      // 0.0020 <- confファイルからloadしてくる
-  double exec_tm; // motionを開始してからの経過時間(実行時間)
-  double epsilon; // doubleの比較判定に使用
+  double dt;         // 0.0020 <- confファイルからloadしてくる
+  double exec_tm;    // motionを開始してからの経過時間(実行時間)
+  double epsilon;    // doubleの比較判定に使用
+  double contact_tm; // フィードバックのフラグが立ってから最高到達点に達するまでの時間 
 
   // motion_time = ff_motion_time or fb_motion_time
   double motion_time;
@@ -106,47 +108,47 @@ private:
   double ball_r;
 
   // 目標の接触時ボール状態(pos,vel)
-  // この変数を元に他のパラメタを決定する
+  // ドリブルしたボールがこの位置に跳ね返ってくるようにffのドリブルの軌道を生成する
   // 今は目標の最高到達点の位置を設定しておく
   // 0:右手, 1:左手
   std::vector<basketball_motion_controller_msgs::ObjStateStamped> targetContactBallState;
-
-  // 予測した接触時のボールの状態(pos,vel)
+ 
+  // ドリブル1サイクルにかける時間
+  // これは上のvelから決まってしまう??
+  
+  // 予測した接触時ボール状態(pos,vel)
+  // targetContactBallStateにボールが来ることが期待されるが、実際はそこに来ないのでビジョンfbによる次の接触タイミングを設定する
   // 今はpredObjeStateをそのまま代入し、最高到達点を次の接触状態とする
   // このボールを右手でつくのか左手でつくのかを決めるフラグが必要になりそう
   basketball_motion_controller_msgs::ObjStateStamped nextContactBallState;
 
   // 目標の接触時ハンド状態
-  // 0:右手, 1:左手
-  // 必要な情報: x,y,zとその1階微分,2階微分, r,p,yとその1階微分,2階微分 -> 計18個
-  // {{x, dot(x), dot(dot(x))}, {y, dot(y), dot(dot(y))}, {z, dot(z), dot(dot(z))}, ~}
+  // row: 0~3 -> rleg, lleg, rarm, larm
   // x,y,z,r,p,y
-  std::vector<std::vector<double>> targetContactEEPos;
-  std::vector<std::vector<double>> targetContactEERPy
-  
+  Eigen::MatrixXd targetContactEEPose;
+  Eigen::MatrixXd targetContactEEVel;
+  Eigen::MatrixXd targetContactEEAcc;
+
   // ff
-  /* std::vector<RTC::TimedPose3D> targetEEPose; */
-  /* std::vector<RTC::TimedPose3D> prevEEPose; */
-  std::vector<std::vector<double>> targetEEPose;
-  std::vector<std::vector<double>> prevEEPose;
-  std::vector<std::vector<double>> EEVel;
-  std::vector<std::vector<double>> prevEEvel;
-  std::vector<std::vector<double>> EEAcc;
+  // row: 0~3 -> rleg, lleg, rarm, larm
+  // columｎ0~5: x, y, z, r, p, y
+  Eigen::MatrixXd targetEEPose;
+  Eigen::MatrixXd prevEEPose;
+  Eigen::MatrixXd EEVel;
+  Eigen::MatrixXd prevEEVel;
+  Eigen::MatrixXd EEAcc;
+
+  // {start, range}
+  // これもEigen::MatrixXdで宣言したほうが楽そう?
+  std::vector<std::vector<double>> rarm_pos_params;
+  std::vector<std::vector<double>> larm_pos_params;
+  std::vector<std::vector<double>> rarm_rpy_params;
+  std::vector<std::vector<double>> larm_rpy_params;
   
-  // std::vector<RTC::~~> targetEEState; // pos,vel,orientation,angular-vel
-  std::vector<std::vector<double>> rarm_pos_range;
-  std::vector<std::vector<double>> larm_pos_range;
-  std::vector<std::vector<double>> rarm_rpy_range;
-  std::vector<std::vector<double>> larm_rpy_range;
-
-  std::vector<std::vector<double>> rarm_pos;
-  std::vector<std::vector<double>> rarm_vel;
-  std::vector<std::vector<double>> rarm_acc;
-  std::vector<std::vector<double>> rarm_acc;
-
   std::vector<double> bound_point;   // 地面への衝突位置(z=0)
   std::vector<double> d;             // bound_point計算用
   std::vector<double> dummyBallPos;  // test
+
   
   bool startDribbleMode_flag;
   bool startDribbleMotion_flag;
@@ -155,18 +157,19 @@ private:
   bool last_motion;
   bool stateChange_flag;
   bool loop_init;
-
+  bool fb_initialize;
+  
   std::mt19937_64 mt64;
   std::uniform_real_distribution<double> random;
 
   // fb
   PolynomialInterpolator fbInterpolator;
-  double tf;
-  std::vector<BoundaryConditions> pos_start_conditions;
-  std::vector<BoundaryConditions> pos_end_conditions;
-  std::vector<BoundaryConditions> rpy_start_conditions;
-  std::vector<BoundaryConditions> rpy_end_conditions;
-  Eigen::VectorXd fbTrajectoryTheta;
+  int polynomial_degree;
+  std::vector<Eigen::VectorXd> rarm_fb_theta; // 6 * (polynomial_degree + 1)
+  std::vector<Eigen::VectorXd> larm_fb_theta; 
+  std::vector<BoundaryConditions> start_conditions; // 6 * (polynomial_degree + 1)
+  std::vector<BoundaryConditions> end_conditions;
+  
 
 };
 
