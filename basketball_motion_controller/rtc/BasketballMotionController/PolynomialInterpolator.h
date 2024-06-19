@@ -6,7 +6,7 @@
 struct BoundaryConditions {
   double val;
   double first_der;
-  // double second_der;
+  double second_der;
 };
 
 class PolynomialInterpolator {
