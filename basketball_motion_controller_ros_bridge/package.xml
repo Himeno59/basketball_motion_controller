@@ -12,6 +12,7 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>basketball_motion_controller_msgs</depend>
+  <depend>object_trajectory_estimator</depend>
   <depend>roscpp</depend>
 
 </package>

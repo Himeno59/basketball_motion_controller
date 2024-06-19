@@ -13,8 +13,12 @@ class BasketballMotionControllerService_impl
 public:
   BasketballMotionControllerService_impl();
   ~BasketballMotionControllerService_impl();
-
-  CORBA::Boolean basketballmotionParam(const CORBA::Double data);
+  CORBA::Boolean startDribbleMode();
+  CORBA::Boolean stopDribbleMode();
+  CORBA::Boolean startDribbleMotion();
+  CORBA::Boolean stopDribbleMotion();
+  
+  CORBA::Boolean BasketballMotionControllerParam(const CORBA::Double data);
   void setComp(BasketballMotionController *i_comp);
 private:
   BasketballMotionController *comp_;
