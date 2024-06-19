@@ -282,15 +282,12 @@ void BasketballMotionController::updateParams() {
     last_motion = true;
     
   } else {
-    // ffとfbの切り替え
     if (motion_state==1) {
-      // fb_mode
       motion_state = 2;
       motion_time = fb_motion_time;
       fb_initialize = true;
       
     } else if (motion_state==2) {
-      // ff_mode
       motion_state = 1;
       motion_time = ff_motion_time;
 
@@ -314,7 +311,6 @@ void BasketballMotionController::setFeedForwardParams() {
   rarm_rpy_params[2][0] = targetContactEEPose(2,5);
 
   /* -- range -- */
-  // とりあえずそのまま
 }
 
 /* -- エンドエフェクタのpose,vel,accの計算 -- */
@@ -399,7 +395,6 @@ void BasketballMotionController::calcContactEEPose() {
   targetContactEEVel(2,5) = 0.0;
   
   /* -- Acc -- */
-  // fbが入ったタイミングで次のffのモーションのパラメタも変更しないといけない
   // acc = -aw^2
   // pos
   targetContactEEAcc(2,0) = 0.5*rarm_pos_params[0][1]*pow(2*M_PI/motion_time, 2);
