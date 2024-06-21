@@ -16,4 +16,9 @@ sleep 1.0 # wait for clock and spawning models
 # new-window hrpsys "rossetlocal && rossetip && ${SOURCE_SCRIPT} && roslaunch auto_stabilizer_config hrpsys_JAXON_RED_WITH_MSLHAND.launch"
 new-window hrpsys "rossetlocal && rossetip && ${SOURCE_SCRIPT} && roslaunch auto_stabilizer_config hrpsys_JAXON_RED_WITH_MSLHAND_for_basketball.launch"
 sleep 1.0 # wait for robot_description
-new-window roseus "${SOURCE_SCRIPT} && roscd basketball_motion/euslisp && emacs -f shell"
+new-window roseus "${SOURCE_SCRIPT} && roscd basketball_motion_controller/euslisp && emacs -f shell"
+new-window ws1
+new-window ws2
+
+
+
