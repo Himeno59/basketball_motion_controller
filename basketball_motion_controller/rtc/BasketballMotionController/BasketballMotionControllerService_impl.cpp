@@ -34,7 +34,13 @@ void BasketballMotionControllerService_impl::setComp(BasketballMotionController 
   comp_ = i_comp;
 }
 
-CORBA::Boolean BasketballMotionControllerService_impl::BasketballMotionControllerParam(const CORBA::Double data)
+CORBA::Boolean BasketballMotionControllerService_impl::setBasketballMotionControllerParam(const OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam& i_param)
 {
-  return comp_->BasketballMotionControllerParam(data);
+  return this->comp_->setBasketballMotionControllerParam(i_param);
+};
+
+CORBA::Boolean BasketballMotionControllerService_impl::getBasketballMotionControllerParam(OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam_out i_param)
+{
+  i_param = new OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam();
+  return this->comp_->getBasketballMotionControllerParam(*i_param);
 };

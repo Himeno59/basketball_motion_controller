@@ -48,8 +48,6 @@ Eigen::VectorXd PolynomialInterpolator::calcCoefficients
   b(5) = end_boundary_conditions.second_der;
 
   Eigen::VectorXd coefficients = A.colPivHouseholderQr().solve(b);
-
-  std::cout << "theta: " << coefficients << std::endl;
   
   return coefficients;
 }

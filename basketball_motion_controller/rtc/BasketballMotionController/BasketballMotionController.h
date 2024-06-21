@@ -5,6 +5,7 @@
 #include <cmath>
 #include <random>
 #include <chrono>
+#include <mutex>
 #include <eigen3/Eigen/Dense>
 
 #include <rtm/Manager.h>
@@ -42,12 +43,21 @@ protected:
   // fbを始めるかどうかのflag
   RTC::TimedBoolean m_fbFlag_;
   RTC::InPort<RTC::TimedBoolean> m_fbFlagIn_;
-
+  // tmを同期させる用
+  RTC::TimedDoubleSeq m_qRef_;
+  RTC::InPort<RTC::TimedDoubleSeq> m_qRefIn_;
+  
   // OutPort
   // refEEPose
   std::vector<RTC::TimedPose3D> m_eePose_;
   std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedPose3D>>> m_eePoseOut_;
 
+  // log用
+  std::vector<RTC::TimedPoint3D> m_eePoint_;
+  std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedPoint3D>>> m_eePointOut_;
+  std::vector<RTC::TimedOrientation3D> m_eeOrientation_;
+  std::vector<std::unique_ptr<RTC::OutPort<RTC::TimedOrientation3D>>> m_eeOrientationOut_;
+  
   BasketballMotionControllerService_impl m_service0_;
   RTC::CorbaPort m_BasketballMotionControllerServicePort_;
 
@@ -72,6 +82,8 @@ protected:
   void resetParam();
   void dummyObjPos();
   bool getProperty(const std::string& key, std::string& ret); // dtをconfファイルからloadする用
+
+  std::mutex mutex_;
   
 public:
   BasketballMotionController(RTC::Manager* manager);
@@ -84,34 +96,36 @@ public:
   bool stopDribbleMode();
   bool startDribbleMotion();
   bool stopDribbleMotion();
-
-  bool BasketballMotionControllerParam(const double data);
-  bool setBasketballMotionControllerParam(const double data);
-  bool getBasketballMotionControllerParam(const double data);
+  
+  bool setBasketballMotionControllerParam(const OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam& i_param);
+  bool getBasketballMotionControllerParam(OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam& i_param);
 
 private:
   // 時間の管理
   double dt;         // 0.0020 <- confファイルからloadしてくる
   double exec_tm;    // motionを開始してからの経過時間(実行時間)
   double epsilon;    // doubleの比較判定に使用
-  double contact_tm; // フィードバックのフラグが立ってから最高到達点に達するまでの時間 
+  double contact_tm; // フィードバックのフラグが立ってから最高到達点に達するまでの時間
 
-  // motion_time = ff_motion_time or fb_motion_time
-  double motion_time;
+  double motion_time; // フィードフォワード、フィードバックで切り替える
   double ff_motion_time;
-  double fb_motion_time;
   
   // ドリブルの状態を区切る
   int motion_state; // 0:動作前, 1:ff, 2:fb
 
-  // ボールの半径
-  double ball_r;
-
+  // ball->handのためのオフセット
+  // x,y,z,r,p,y
+  std::vector<double> hand_offset;
+  
   // 目標の接触時ボール状態(pos,vel)
-  // ドリブルしたボールがこの位置に跳ね返ってくるようにffのドリブルの軌道を生成する
+  // ドリブルしたボールがこの位置に跳ね返ってくるようにドリブルの軌道を生成する
   // 今は目標の最高到達点の位置を設定しておく
   // 0:右手, 1:左手
   std::vector<basketball_motion_controller_msgs::ObjStateStamped> targetContactBallState;
+
+  // ボールが遠くに行ったときに危険な動作をしないための制限
+  // targetContactBallStateからの距離
+  double maxDribbleReach;
  
   // ドリブル1サイクルにかける時間
   // これは上のvelから決まってしまう??
@@ -129,7 +143,7 @@ private:
   Eigen::MatrixXd targetContactEEVel;
   Eigen::MatrixXd targetContactEEAcc;
 
-  // ff
+  // 計算に使用するハンドのpose,vel,acc
   // row: 0~3 -> rleg, lleg, rarm, larm
   // columｎ0~5: x, y, z, r, p, y
   Eigen::MatrixXd targetEEPose;
@@ -138,31 +152,36 @@ private:
   Eigen::MatrixXd prevEEVel;
   Eigen::MatrixXd EEAcc;
 
+  // 三角関数ff軌道のパラメタ
   // {start, range}
-  // これもEigen::MatrixXdで宣言したほうが楽そう?
   std::vector<std::vector<double>> rarm_pos_params;
   std::vector<std::vector<double>> larm_pos_params;
   std::vector<std::vector<double>> rarm_rpy_params;
   std::vector<std::vector<double>> larm_rpy_params;
-  
+
+  // 将来的に使うかも??
   std::vector<double> bound_point;   // 地面への衝突位置(z=0)
   std::vector<double> d;             // bound_point計算用
   std::vector<double> dummyBallPos;  // test
 
+  // flag
+  bool startDribbleMode_flag;    // dribble-modeの姿勢 = initPoseの姿勢への遷移
+  bool startDribbleMotion_flag;  // motionのスタート
   
-  bool startDribbleMode_flag;
-  bool startDribbleMotion_flag;
-  
-  bool motionEnd_flag;
-  bool last_motion;
-  bool stateChange_flag;
-  bool loop_init;
-  bool fb_initialize;
-  
-  std::mt19937_64 mt64;
-  std::uniform_real_distribution<double> random;
+  bool motionEnd_flag;           // stop-dribble-motionが呼ばれたかどうか
+  bool last_motion;              // 最後のmotionかどうか
+  bool stateChange_flag;         // ffとfbの切り替わりが有るかどうか
+  bool loop_init;                // 各loopの最初が0.0秒になるようにする
+  bool fb_initialize;            // fbが入った最初のタイミングで多項式の係数計算をする
+  bool fb_flag;                  // object_trajectory_estimatorからfbのフラグが来たかどうか
 
-  // fb
+  // test用
+  bool test_flag;
+  std::mt19937_64 mt64;
+  std::uniform_real_distribution<double> random1;
+  std::uniform_real_distribution<double> random2;
+
+  // fbの多項式補間軌道の係数
   PolynomialInterpolator fbInterpolator;
   int polynomial_degree;
   std::vector<Eigen::VectorXd> rarm_fb_theta; // 6 * (polynomial_degree + 1)

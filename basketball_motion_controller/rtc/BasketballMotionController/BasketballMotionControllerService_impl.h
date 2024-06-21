@@ -18,7 +18,8 @@ public:
   CORBA::Boolean startDribbleMotion();
   CORBA::Boolean stopDribbleMotion();
   
-  CORBA::Boolean BasketballMotionControllerParam(const CORBA::Double data);
+  CORBA::Boolean setBasketballMotionControllerParam(const OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam& i_param);
+  CORBA::Boolean getBasketballMotionControllerParam(OpenHRP::BasketballMotionControllerService::BasketballMotionControllerParam_out i_param);
   void setComp(BasketballMotionController *i_comp);
 private:
   BasketballMotionController *comp_;

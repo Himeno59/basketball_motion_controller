@@ -4,10 +4,23 @@ module OpenHRP
 {
   interface BasketballMotionControllerService
   {
-    boolean BasketballMotionControllerParam(in double data);
+    struct BasketballMotionControllerParam
+    {
+      sequence<double, 6> target_contact_ball_state;
+      sequence<double, 6> hand_offset;
+      sequence<double, 6> rarm_range;
+      sequence<double, 6> larm_range;
+
+      double ff_motion_time;
+    };
+
+    boolean setBasketballMotionControllerParam(in BasketballMotionControllerParam i_param);
+    boolean getBasketballMotionControllerParam(out BasketballMotionControllerParam i_param);
+    
     boolean startDribbleMode();
     boolean stopDribbleMode();
     boolean startDribbleMotion();
     boolean stopDribbleMotion();
-  };
+
+  };  
 };
